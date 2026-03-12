@@ -6,7 +6,7 @@ const dbMiddleware = async (req, res, next) => {
         next();
     } catch (error) {
         console.error("Database connection error in middleware:", error);
-        res.status(500).json({ msg: "Database connection failed" });
+        res.status(500).json({ msg: "Database connection failed", error: error });
     }
 };
 
