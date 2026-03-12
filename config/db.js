@@ -10,12 +10,14 @@ const connectDB = async () => {
     }
 
     try {
-        const db = await mongoose.connect(MONGO_URI);
+        const db = await mongoose.connect(MONGO_URI, {
+            serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of default 30s
+        });
         isConnected = db.connections[0].readyState;
-        console.log("Mongo connected");
+        console.log("Mongo connected successfully");
     } catch (err) {
-        console.error("Mongo connection failed", err);
-        // Don't exit process in serverless!
+        console.error("Critical: Mongo connection failed", err.message);
+        throw err; 
     }
 };
 
