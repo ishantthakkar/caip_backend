@@ -17,6 +17,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+// Root and Health Check
+app.get("/", (req, res) => res.send("CAIP Backend API is running..."));
+app.get("/health", (req, res) => res.json({ status: "healthy", timestamp: new Date() }));
+
 // Import Routes
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
