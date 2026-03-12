@@ -8,10 +8,9 @@ const { PORT } = require("./config/config");
 // Initialize app
 const app = express();
 
-// Connect Database
-connectDB();
-
 // Middleware
+const dbMiddleware = require("./middleware/dbMiddleware");
+app.use(dbMiddleware);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
