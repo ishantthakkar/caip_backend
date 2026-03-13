@@ -11,6 +11,9 @@ router.get("/member/dashboard-stats", verifyToken, defaulterController.getDashbo
 router.get("/defaulter/search-history", verifyToken, defaulterController.getSearchHistory);
 router.put("/defaulter/update/:id", verifyToken, upload.array("attachment_documents", 5), defaulterController.updateReport);
 router.post("/defaulter/add-payment/:id", verifyToken, defaulterController.addPayment);
+router.post("/member/approve-sub-report", verifyToken, defaulterController.memberApproveSubReport);
+router.get("/member/activity-logs", verifyToken, defaulterController.getActivityLogs);
+router.post("/auth/log-logout", verifyToken, defaulterController.logLogout);
 
 // Admin routes for defaulters
 router.get("/admin/dashboard-stats", defaulterController.getAdminDashboardStats);

@@ -2,22 +2,41 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const DefaulterReport = require("../models/DefaulterReport");
 const SearchHistory = require("../models/SearchHistory");
+const ActivityLog = require("../models/ActivityLog");
+const logActivity = require("../middleware/activityLogger");
 
 exports.reportDefaulter = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
+        const userId = req.user.parentId || req.user.id;
+        const user = await User.findById(userId);
         if (!user) return res.status(404).json({ msg: "User not found" });
 
         const attachment_documents = req.files ? req.files.map(f => f.filename) : [];
 
+        const isSubMember = !!req.user.parentId;
+        const organizationId = isSubMember ? req.user.parentId : req.user.id;
+
         const report = new DefaulterReport({
             ...req.body,
-            user_id: user._id,
+            user_id: organizationId,
+            reported_by_id: req.user.id,
+            reported_by_role: isSubMember ? 'sub-member' : 'member',
             attachment_documents,
-            status: 1 // Automatically approved for now
+            status: isSubMember ? 0 : 1 // Sub-member reports are pending (0), Master reports are approved (1)
         });
 
         await report.save();
+
+        // Log the activity
+        await logActivity(req, {
+            userId: req.user.id,
+            userRole: isSubMember ? 'sub-member' : 'member',
+            userName: req.user.name || 'User',
+            activityType: 'Report Defaulter',
+            details: `Reported new defaulter: ${req.body.defaulter_name} (${req.body.gst_number || 'N/A'})`,
+            parentId: organizationId
+        });
+
         return res.status(201).json({ msg: "Defaulter reported successfully", data: report });
     } catch (err) {
         console.error(err);
@@ -28,7 +47,7 @@ exports.reportDefaulter = async (req, res) => {
 exports.searchDefaulter = async (req, res) => {
     try {
         const { gst, pan, cin, aadhar, name, state, district, subDistrict, address, includePending } = req.query;
-        let query = includePending === 'true' ? {} : { status: 1 };
+        let query = includePending === 'true' ? { status: { $ne: 2 } } : { status: 1 };
 
         if (gst) query.gst_number = { $regex: gst, $options: "i" };
         if (pan) query.pan_number = { $regex: pan, $options: "i" };
@@ -62,7 +81,27 @@ exports.searchDefaulter = async (req, res) => {
         if (district) query.district = district;
         if (subDistrict) query.cities = subDistrict;
 
-        const reports = await DefaulterReport.find(query).populate('user_id', 'companyName').sort({ createdAt: -1 });
+        let reports = await DefaulterReport.find(query).populate('user_id', 'name companyName').sort({ createdAt: -1 });
+
+        // Enhanced: if identifier search finds a record, also fetch other records sharing the same address
+        if (gst || pan || cin || aadhar || name) {
+            const matchedAddresses = reports
+                .map(r => r.defaulter_address)
+                .filter(a => a && a.trim().length > 5); // Filter out empty or too short generic addresses
+
+            if (matchedAddresses.length > 0) {
+                const existingIds = reports.map(r => r._id.toString());
+                const relatedReports = await DefaulterReport.find({
+                    status: 1, // Only fetch approved related records
+                    defaulter_address: { $in: matchedAddresses },
+                    _id: { $nin: existingIds }
+                }).populate('user_id', 'name companyName');
+
+                if (relatedReports.length > 0) {
+                    reports = [...reports, ...relatedReports].sort((a, b) => b.createdAt - a.createdAt);
+                }
+            }
+        }
 
         let historyFilters = { gst, pan, cin, aadhar, name, state, district, subDistrict, address };
         if (reports.length > 0) {
@@ -98,9 +137,19 @@ exports.searchDefaulter = async (req, res) => {
         }
 
         await SearchHistory.create({
-            user_id: req.user.id,
+            user_id: req.user.id, // History is still personal
             filters: historyFilters,
             resultCount: reports.length
+        });
+
+        // Log clinical activity
+        await logActivity(req, {
+            userId: req.user.id,
+            userRole: req.user.parentId ? 'sub-member' : 'member',
+            userName: req.user.name || 'Unknown',
+            activityType: 'Defaulter Search',
+            details: `Searched for: ${gst || pan || cin || aadhar || name || address}. Records found: ${reports.length}`,
+            parentId: req.user.parentId || req.user.id
         });
 
         return res.status(200).json({ data: reports });
@@ -112,7 +161,8 @@ exports.searchDefaulter = async (req, res) => {
 
 exports.getMyReports = async (req, res) => {
     try {
-        const reports = await DefaulterReport.find({ user_id: req.user.id }).sort({ createdAt: -1 });
+        const effectiveUserId = req.user.parentId || req.user.id;
+        const reports = await DefaulterReport.find({ user_id: new mongoose.Types.ObjectId(effectiveUserId) }).sort({ createdAt: -1 });
         return res.status(200).json({ data: reports });
     } catch (err) {
         console.error(err);
@@ -122,7 +172,7 @@ exports.getMyReports = async (req, res) => {
 
 exports.getDashboardStats = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.parentId || req.user.id;
         const myReports = await DefaulterReport.find({ user_id: userId }).sort({ createdAt: -1 }).limit(5);
         const totalReported = await DefaulterReport.countDocuments({ user_id: userId });
         const aggregateSum = await DefaulterReport.aggregate([
@@ -136,7 +186,7 @@ exports.getDashboardStats = async (req, res) => {
             { $group: { _id: null, total: { $sum: "$payments.amount" } } }
         ]);
 
-        const searchHistory = await SearchHistory.find({ user_id: userId }).sort({ createdAt: -1 }).limit(5);
+        const searchHistory = await SearchHistory.find({ user_id: new mongoose.Types.ObjectId(req.user.id) }).sort({ createdAt: -1 }).limit(5);
 
         const industryDist = await DefaulterReport.aggregate([
             { $match: { user_id: new mongoose.Types.ObjectId(userId) } },
@@ -150,7 +200,7 @@ exports.getDashboardStats = async (req, res) => {
 
         const startOfYear = new Date(new Date().getFullYear(), 0, 1);
         const searchTrend = await SearchHistory.aggregate([
-            { $match: { user_id: new mongoose.Types.ObjectId(userId), createdAt: { $gte: startOfYear } } },
+            { $match: { user_id: new mongoose.Types.ObjectId(req.user.id), createdAt: { $gte: startOfYear } } },
             { $group: { _id: { month: { $month: "$createdAt" } }, count: { $sum: 1 } } },
             { $sort: { "_id.month": 1 } }
         ]);
@@ -175,7 +225,7 @@ exports.getDashboardStats = async (req, res) => {
 
 exports.getSearchHistory = async (req, res) => {
     try {
-        const history = await SearchHistory.find({ user_id: req.user.id })
+        const history = await SearchHistory.find({ user_id: new mongoose.Types.ObjectId(req.user.id) })
             .populate('user_id', 'name')
             .sort({ createdAt: -1 })
             .limit(50);
@@ -188,7 +238,8 @@ exports.getSearchHistory = async (req, res) => {
 
 exports.updateReport = async (req, res) => {
     try {
-        const report = await DefaulterReport.findOne({ _id: req.params.id, user_id: req.user.id });
+        const userId = req.user.parentId || req.user.id;
+        const report = await DefaulterReport.findOne({ _id: req.params.id, user_id: userId });
         if (!report) return res.status(404).json({ msg: "Report not found or unauthorized" });
 
         const updateData = { ...req.body };
@@ -207,8 +258,12 @@ exports.updateReport = async (req, res) => {
 
 exports.addPayment = async (req, res) => {
     try {
-        const report = await DefaulterReport.findOne({ _id: req.params.id, user_id: req.user.id });
+        const userId = req.user.parentId || req.user.id;
+        const report = await DefaulterReport.findOne({ _id: req.params.id, user_id: userId });
         if (!report) return res.status(404).json({ msg: "Report not found or unauthorized" });
+        if (report.status !== 1) {
+            return res.status(403).json({ msg: "Payments cannot be added until the report is approved." });
+        }
 
         const { payments } = req.body;
         if (!Array.isArray(payments)) {
@@ -220,6 +275,17 @@ exports.addPayment = async (req, res) => {
         report.outstanding_amount = Math.max(0, report.default_amount - totalPaid);
 
         await report.save();
+
+        // Log the activity
+        await logActivity(req, {
+            userId: req.user.id,
+            userRole: req.user.parentId ? 'sub-member' : 'member',
+            userName: req.user.name || 'User',
+            activityType: 'Add Payment',
+            details: `Added payment of ₹${payments.reduce((sum, p) => sum + Number(p.amount), 0)} for ${report.defaulter_name}`,
+            parentId: userId
+        });
+
         return res.status(200).json({ msg: "Payment added successfully", data: report });
     } catch (err) {
         console.error(err);
@@ -353,5 +419,72 @@ exports.adminGetDefaultersByMember = async (req, res) => {
     } catch (err) {
         console.error(err);
         return res.status(500).json({ msg: "Database error" });
+    }
+};
+exports.memberApproveSubReport = async (req, res) => {
+    try {
+        const { reportId, status } = req.body; // 1 for approve, 2 for reject
+        if (![1, 2].includes(Number(status))) {
+            return res.status(400).json({ msg: "Invalid status update" });
+        }
+
+        const userId = req.user.id; // Must be primary member
+        const report = await DefaulterReport.findOne({ _id: reportId, user_id: userId });
+        
+        if (!report) {
+            return res.status(404).json({ msg: "Report not found or unauthorized" });
+        }
+
+        report.status = Number(status);
+        await report.save();
+
+        const action = Number(status) === 1 ? 'Approved' : 'Rejected';
+
+        // Log the activity
+        await logActivity(req, {
+            userId: req.user.id,
+            userRole: 'member',
+            userName: req.user.name || 'Master',
+            activityType: 'Status Update',
+            details: `${action} sub-member report for ${report.defaulter_name}`,
+            parentId: userId
+        });
+        return res.status(200).json({ msg: `Report ${action} successfully`, data: report });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "Error processing approval" });
+    }
+};
+
+exports.getActivityLogs = async (req, res) => {
+    try {
+        const organizationId = req.user.parentId || req.user.id;
+        const logs = await ActivityLog.find({ parentId: organizationId })
+            .sort({ createdAt: -1 })
+            .limit(100);
+        
+        return res.status(200).json({ data: logs });
+    } catch (err) {
+        console.error("Error fetching logs:", err);
+        return res.status(500).json({ msg: "Error fetching activity history" });
+    }
+};
+
+exports.logLogout = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ msg: "Unauthorized" });
+
+        await logActivity(req, {
+            userId: req.user.id,
+            userRole: req.user.parentId ? 'sub-member' : 'member',
+            userName: req.user.name || 'User',
+            activityType: 'System Logout',
+            details: `User logged out`,
+            parentId: req.user.parentId || req.user.id
+        });
+
+        return res.status(200).json({ msg: "Logout logged" });
+    } catch (error) {
+        return res.status(500).json({ msg: "Error logging logout" });
     }
 };

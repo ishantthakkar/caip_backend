@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema({
     phone: {
         type: String,
         required: true,
+        unique: true,
     },
     state: {
         type: String,
@@ -67,6 +68,7 @@ const userSchema = new mongoose.Schema({
     businessDocuments: { type: [String], default: [] },
     companyName: { type: String, default: "" },
     memberId: { type: String, default: "" },
+    rejectionReason: { type: String, default: "" },
     token: String
 }, { timestamps: true });
 

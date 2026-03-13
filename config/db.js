@@ -5,7 +5,6 @@ let isConnected = false;
 
 const connectDB = async () => {
     if (isConnected) {
-        console.log("Using existing database connection");
         return;
     }
 
@@ -17,7 +16,7 @@ const connectDB = async () => {
         console.log("Mongo connected successfully");
     } catch (err) {
         console.error("Critical: Mongo connection failed", err.message);
-        throw err; 
+        throw err;
     }
 };
 

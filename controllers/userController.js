@@ -12,7 +12,7 @@ exports.getUsers = async (req, res) => {
 
 exports.changeStatus = async (req, res) => {
     try {
-        const { userId, status } = req.body;
+        const { userId, status, rejectionReason } = req.body;
         if (!status || ![1, 2].includes(Number(status))) {
             return res.status(400).json({ msg: "Status must be 1 (approved) or 2 (rejected)" });
         }
@@ -21,6 +21,11 @@ exports.changeStatus = async (req, res) => {
         if (!user) return res.status(404).json({ msg: "User not found" });
 
         user.status = Number(status);
+        if (Number(status) === 2) {
+            user.rejectionReason = rejectionReason || "";
+        } else {
+            user.rejectionReason = ""; // Clear if approved
+        }
         await user.save();
 
         return res.status(200).json({

@@ -19,7 +19,9 @@ const defaulterReportSchema = new mongoose.Schema({
     date_of_default: Date,
     reason_description: String,
     attachment_documents: [String],
-    status: { type: Number, default: 0 }, // 0 = Pending, 1 = Approved
+    status: { type: Number, default: 0 }, // 0 = Pending, 1 = Approved, 2 = Rejected
+    reported_by_id: { type: mongoose.Schema.Types.ObjectId },
+    reported_by_role: { type: String, enum: ['member', 'sub-member'] },
     report_user_id: Number,
     defaulter_address: String,
     court_complex_name: String,
