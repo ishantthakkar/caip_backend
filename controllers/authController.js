@@ -10,7 +10,7 @@ exports.register = async (req, res) => {
         const { name, email, password, phone, state, district, subDistrict, gst, pan, role, companyName } = req.body;
         const businessDocument = req.file ? req.file.filename : null;
 
-        if (!name || !email || !password || !phone || !state || !district || !subDistrict) {
+        if (!name || !email || !phone || !state || !district || !subDistrict) {
             return res.status(400).json({ msg: "Required fields are missing" });
         }
 
@@ -20,7 +20,10 @@ exports.register = async (req, res) => {
         const existingPhone = await User.findOne({ phone });
         if (existingPhone) return res.status(400).json({ msg: "Phone number already exists" });
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        var hashedPassword = "";
+        if (password) {
+            hashedPassword = await bcrypt.hash(password, 10);
+        }
 
         const count = await User.countDocuments();
         const memberId = `CAIP${String(count + 1).padStart(5, '0')}`;

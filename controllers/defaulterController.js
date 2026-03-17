@@ -188,6 +188,8 @@ exports.getDashboardStats = async (req, res) => {
 
         const searchHistory = await SearchHistory.find({ user_id: new mongoose.Types.ObjectId(req.user.id) }).sort({ createdAt: -1 }).limit(5);
 
+        const recentActivities = await ActivityLog.find({ parentId: new mongoose.Types.ObjectId(userId) }).sort({ createdAt: -1 }).limit(5);
+
         const industryDist = await DefaulterReport.aggregate([
             { $match: { user_id: new mongoose.Types.ObjectId(userId) } },
             { $group: { _id: "$industry", count: { $sum: 1 } } }
@@ -212,6 +214,7 @@ exports.getDashboardStats = async (req, res) => {
                 totalRecovered: recoveredSum[0]?.total || 0
             },
             myReports,
+            recentActivities,
             searchHistory,
             industryDist: industryDist.map(item => ({ name: item._id || 'Uncategorized', value: item.count })),
             stateInsights: stateInsights.map(item => ({ state: item._id || 'N/A', count: item.count, amount: item.totalAmount })),
