@@ -7,8 +7,8 @@ const logActivity = require("../middleware/activityLogger");
 
 exports.register = async (req, res) => {
     try {
-        const { name, email, password, phone, state, district, subDistrict, gst, pan, role, companyName } = req.body;
-        const businessDocument = req.file ? req.file.filename : null;
+        const { name, email, password, phone, state, district, subDistrict, city, gst, pan, role, companyName, businessAddress } = req.body;
+        const businessDocuments = req.files ? req.files.map(file => file.filename) : [];
 
         if (!name || !email || !phone || !state || !district || !subDistrict) {
             return res.status(400).json({ msg: "Required fields are missing" });
@@ -36,10 +36,12 @@ exports.register = async (req, res) => {
             state,
             district,
             subDistrict,
-            businessDocument,
+            city: city || "",
+            businessDocuments,
             gst: gst || "",
             pan: pan || "",
             companyName: companyName || "",
+            businessAddress: businessAddress || "",
             role: 2,
             status: 0,
             membership_status: 0,
@@ -228,5 +230,27 @@ exports.adminLogin = async (req, res) => {
     } catch (err) {
         console.error(err);
         return res.status(500).json({ msg: "Internal server error", error: err.message });
+    }
+};
+
+exports.verifyGst = async (req, res) => {
+    try {
+        const { gst } = req.params;
+        if (!gst) {
+            return res.status(400).json({ msg: "GST number is required" });
+        }
+
+        const apiUrl = `https://sheet.gstincheck.co.in/check/a01b8bb87c9abff4cef43e4dd122ae94/${gst}`;
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+
+        if (data.flag) {
+            return res.status(200).json({ msg: "GST found", data: data.data });
+        } else {
+            return res.status(400).json({ msg: data.message || "Invalid GST number" });
+        }
+    } catch (err) {
+        console.error("GST verification error:", err);
+        return res.status(500).json({ msg: "Internal server error" });
     }
 };

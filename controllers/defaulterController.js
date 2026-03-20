@@ -22,7 +22,7 @@ exports.reportDefaulter = async (req, res) => {
             reported_by_id: req.user.id,
             reported_by_role: isSubMember ? 'sub-member' : 'member',
             attachment_documents,
-            status: isSubMember ? 0 : 1 // Sub-member reports are pending (0), Master reports are approved (1)
+            status: 1 // Automatically approve all reports (including sub-members)
         });
 
         await report.save();
@@ -245,6 +245,13 @@ exports.updateReport = async (req, res) => {
         const report = await DefaulterReport.findOne({ _id: req.params.id, user_id: userId });
         if (!report) return res.status(404).json({ msg: "Report not found or unauthorized" });
 
+        // Check if edit window (24 hours) has expired
+        const lastModified = report.updatedAt || report.createdAt;
+        const diffInHours = (Date.now() - new Date(lastModified).getTime()) / (1000 * 60 * 60);
+        if (diffInHours > 24) {
+            return res.status(403).json({ msg: "The edit window for this record has expired (24 hours after last modification)." });
+        }
+
         const updateData = { ...req.body };
         if (req.files && req.files.length > 0) {
             const newFiles = req.files.map(f => f.filename);
@@ -387,7 +394,7 @@ exports.getAdminDashboardStats = async (req, res) => {
 
 exports.adminGetAllDefaulters = async (req, res) => {
     try {
-        const reports = await DefaulterReport.find().populate('user_id', 'name email').sort({ createdAt: -1 });
+        const reports = await DefaulterReport.find().populate('user_id', 'name email companyName memberId').sort({ createdAt: -1 });
         return res.status(200).json({ msg: "Defaulters fetched successfully", data: reports });
     } catch (err) {
         console.error(err);
@@ -417,7 +424,7 @@ exports.adminChangeStatus = async (req, res) => {
 exports.adminGetDefaultersByMember = async (req, res) => {
     try {
         const { userId } = req.params;
-        const reports = await require("../models/DefaulterReport").find({ user_id: userId }).sort({ createdAt: -1 });
+        const reports = await require("../models/DefaulterReport").find({ user_id: userId }).populate('user_id', 'name email companyName memberId').sort({ createdAt: -1 });
         return res.status(200).json({ msg: "Member defaulters fetched", data: reports });
     } catch (err) {
         console.error(err);
@@ -470,6 +477,46 @@ exports.getActivityLogs = async (req, res) => {
     } catch (err) {
         console.error("Error fetching logs:", err);
         return res.status(500).json({ msg: "Error fetching activity history" });
+    }
+};
+
+exports.adminGetActivityLogs = async (req, res) => {
+    try {
+        const logsData = await ActivityLog.aggregate([
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "userId",
+                    foreignField: "_id",
+                    as: "userDetails"
+                }
+            },
+            {
+                $unwind: { path: "$userDetails", preserveNullAndEmptyArrays: true }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    userId: 1,
+                    userRole: 1,
+                    userName: 1,
+                    activityType: 1,
+                    details: 1,
+                    ipAddress: 1,
+                    parentId: 1,
+                    createdAt: 1,
+                    memberId: { $ifNull: ["$userDetails.memberId", "ADMIN"] },
+                    companyName: { $ifNull: ["$userDetails.companyName", "System"] }
+                }
+            },
+            { $sort: { createdAt: -1 } },
+            { $limit: 1000 }
+        ]);
+
+        return res.status(200).json({ data: logsData });
+    } catch (err) {
+        console.error("Error fetching admin logs:", err);
+        return res.status(500).json({ msg: "Error fetching admin activity history" });
     }
 };
 

@@ -9,14 +9,17 @@ async function seedDefaulters() {
         await mongoose.connect('mongodb://localhost:27017/caip');
         console.log('Connected to Local MongoDB');
 
-        // Find a specific user to associate with reports
-        const user = await User.findOne({ email: 'ishant.thakkar@metizsoft.com' });
+        // Target specific user ID
+        const targetUserId = '69ba424ce35f5d9597dacace';
+        const user = await User.findById(targetUserId);
+        
         if (!user) {
-            console.error('User ishant.thakkar@metizsoft.com not found. Please check existing users.');
-            process.exit(1);
+            console.warn(`User with ID ${targetUserId} not found. Using generic IDs for associations.`);
         }
-
-        console.log(`Using user: ${user.name} (${user.email}) for reports.`);
+        
+        const effectiveUserId = user ? user._id : new mongoose.Types.ObjectId(targetUserId);
+        const name = user ? user.name : 'Target User';
+        console.log(`Using user ID: ${effectiveUserId} (${name}) for reports.`);
 
         const states = ["Gujarat", "Maharashtra", "Rajasthan", "Delhi", "Karnataka"];
         const districts = ["Ahmedabad", "Mumbai", "Jaipur", "Central Delhi", "Bangalore"];
@@ -35,8 +38,8 @@ async function seedDefaulters() {
             const outstanding = amount - (Math.random() > 0.7 ? Math.floor(Math.random() * (amount * 0.5)) : 0);
             
             fakeReports.push({
-                user_id: user._id,
-                reported_by_id: user._id,
+                user_id: effectiveUserId,
+                reported_by_id: effectiveUserId,
                 reported_by_role: 'member',
                 defaulter_name: `Fake Company ${i} Ltd`,
                 mobile_number: `98765432${(i % 100).toString().padStart(2, '0')}`,
@@ -52,7 +55,7 @@ async function seedDefaulters() {
                 industry: industries[i % industries.length],
                 date_of_default: new Date(Date.now() - (i * 24 * 60 * 60 * 1000)),
                 reason_description: reasons[i % reasons.length],
-                status: i % 3 === 0 ? 1 : (i % 5 === 0 ? 2 : 0), // Mix of Pending, Approved, Rejected
+                status: 1, // All Approved
                 defaulter_address: `${i}th Industrial Estate, Phase II`,
             });
         }

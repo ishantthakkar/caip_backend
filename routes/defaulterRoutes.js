@@ -20,5 +20,6 @@ router.get("/admin/dashboard-stats", defaulterController.getAdminDashboardStats)
 router.get("/admin/defaulters", defaulterController.adminGetAllDefaulters);
 router.get("/admin/member-defaulters/:userId", defaulterController.adminGetDefaultersByMember);
 router.post("/admin/defaulter/change-status", defaulterController.adminChangeStatus);
+router.get("/admin/activity-logs", defaulterController.adminGetActivityLogs);
 
 module.exports = router;

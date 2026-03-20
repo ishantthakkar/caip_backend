@@ -11,7 +11,8 @@ const defaulterReportSchema = new mongoose.Schema({
     aadhar_number: String,
     state: String,
     district: String,
-    cities: String,
+    cities: String, // This field is used for Sub-District
+    city: String,
     financial_year: String,
     default_amount: Number,
     outstanding_amount: Number,

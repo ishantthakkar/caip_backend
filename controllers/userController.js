@@ -48,6 +48,39 @@ exports.getProfile = async (req, res) => {
         const user = await User.findById(req.user.id);
         if (!user) return res.status(404).json({ msg: "User not found" });
 
+        // Auto-fix for existing members who have 0 subMemberLimit
+        if (user.membership_status === "1" && (user.subMemberLimit === 0 || !user.subMemberLimit)) {
+            try {
+                const MembershipPlan = require("../models/MembershipPlan");
+                const Transaction = require("../models/Transaction");
+                
+                // Try to find by Transaction log if available
+                const lastTx = await Transaction.findOne({ user_id: user._id }).sort({ createdAt: -1 });
+                if (lastTx && lastTx.plan_id) {
+                    const plan = await MembershipPlan.findById(lastTx.plan_id);
+                    if (plan) {
+                        user.subMemberLimit = plan.subMemberLimit;
+                        user.planName = plan.name;
+                        user.membershipBenefits = plan.benefits;
+                        await user.save();
+                    }
+                } else if (user.planName) {
+                    // Fallback to searching by plan name
+                    const plan = await MembershipPlan.findOne({ name: user.planName });
+                    if (plan) {
+                        user.subMemberLimit = plan.subMemberLimit;
+                        await user.save();
+                    }
+                } else {
+                    // Default fallback for legacy members (e.g. 5 as old default)
+                    user.subMemberLimit = 5;
+                    await user.save();
+                }
+            } catch (err) {
+                console.error("Self-healing subMemberLimit error:", err);
+            }
+        }
+
         return res.status(200).json({ msg: "Profile fetched successfully", data: user });
     } catch (err) {
         console.error(err);

@@ -31,6 +31,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    city: {
+        type: String,
+        required: false,
+    },
     businessDocument: {
         type: String,
         default: null,
@@ -60,6 +64,9 @@ const userSchema = new mongoose.Schema({
     businessAddress: { type: String, default: "" },
     industry: { type: String, default: "" },
     membershipExpiry: { type: String, default: "N/A" },
+    membershipBenefits: { type: [String], default: [] },
+    planName: { type: String, default: "" },
+    subMemberLimit: { type: Number, default: 0 },
     companyEmail: { type: String, default: "" },
     alternateContactPerson: { type: String, default: "" },
     companyPhoneNumber: { type: String, default: "" },
