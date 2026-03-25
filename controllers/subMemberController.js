@@ -31,7 +31,7 @@ exports.createSubMember = async (req, res) => {
         // Notify Member
         await Notification.create({
             member_id: parentId,
-            message_title: "Sub-member Added 👤",
+            message_title: "Sub-member Added",
             message_content: `A new sub-member account for ${firstName} (${email}) has been successfully created.`,
             sending_time: new Date().toISOString()
         });

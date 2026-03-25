@@ -228,7 +228,9 @@ exports.searchDefaulter = async (req, res) => {
 exports.getMyReports = async (req, res) => {
     try {
         const effectiveUserId = req.user.parentId || req.user.id;
-        const reports = await DefaulterReport.find({ user_id: new mongoose.Types.ObjectId(effectiveUserId) }).sort({ createdAt: -1 });
+        const reports = await DefaulterReport.find({ user_id: new mongoose.Types.ObjectId(effectiveUserId) })
+            .populate('user_id', 'name companyName')
+            .sort({ createdAt: -1 });
         return res.status(200).json({ data: reports });
     } catch (err) {
         console.error(err);
