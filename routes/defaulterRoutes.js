@@ -4,6 +4,7 @@ const defaulterController = require("../controllers/defaulterController");
 const verifyToken = require("../middleware/auth");
 const upload = require("../middleware/upload");
 
+router.get("/defaulter/check-duplicate", verifyToken, defaulterController.checkDuplicates);
 router.post("/defaulter/report", verifyToken, upload.array("attachment_documents", 5), defaulterController.reportDefaulter);
 router.get("/defaulter/search", verifyToken, defaulterController.searchDefaulter);
 router.get("/defaulter/my-reports", verifyToken, defaulterController.getMyReports);

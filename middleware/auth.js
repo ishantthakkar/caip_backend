@@ -17,7 +17,7 @@ const verifyToken = async (req, res, next) => {
                 req.user.parentId = sub.parentId.toString();
             }
         }
-        
+
         next();
     } catch (err) {
         console.error(err);

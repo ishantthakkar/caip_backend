@@ -27,6 +27,7 @@ const membershipRoutes = require("./routes/membershipRoutes");
 const defaulterRoutes = require("./routes/defaulterRoutes");
 const locationRoutes = require("./routes/locationRoutes");
 const subMemberRoutes = require("./routes/subMemberRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 // Use Routes
 app.use("/api", authRoutes);
@@ -34,6 +35,7 @@ app.use("/api", userRoutes);
 app.use("/api", membershipRoutes);
 app.use("/api", defaulterRoutes);
 app.use("/api", locationRoutes);
+app.use("/api", notificationRoutes);
 app.use("/api/sub-members", subMemberRoutes);
 
 // Start server

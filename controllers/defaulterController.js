@@ -4,6 +4,35 @@ const DefaulterReport = require("../models/DefaulterReport");
 const SearchHistory = require("../models/SearchHistory");
 const ActivityLog = require("../models/ActivityLog");
 const logActivity = require("../middleware/activityLogger");
+const Notification = require("../models/Notification");
+
+exports.checkDuplicates = async (req, res) => {
+    try {
+        const { gst, pan, mobile, address } = req.query;
+        if (!gst && !pan && !mobile && !address) return res.status(400).json({ msg: "Query required" });
+
+        const queries = [];
+        if (gst) queries.push({ gst_number: gst });
+        if (pan) queries.push({ pan_number: pan });
+        if (mobile) queries.push({ mobile_number: mobile });
+        if (address) queries.push({ defaulter_address: address });
+
+        const existing = await DefaulterReport.findOne({ $or: queries });
+        if (existing) {
+            let field = "Details";
+            if (gst && existing.gst_number === gst) field = "GST";
+            else if (pan && existing.pan_number === pan) field = "PAN";
+            else if (mobile && existing.mobile_number === mobile) field = "Mobile";
+            else if (address && existing.defaulter_address === address) field = "Address";
+            
+            return res.status(200).json({ exists: true, field });
+        }
+        return res.status(200).json({ exists: false });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "Internal Error" });
+    }
+};
 
 exports.reportDefaulter = async (req, res) => {
     try {
@@ -27,6 +56,24 @@ exports.reportDefaulter = async (req, res) => {
 
         await report.save();
 
+        // System Notification for the reporter
+        await Notification.create({
+            member_id: req.user.id,
+            message_title: "Defaulter Added ✅",
+            message_content: `Your report for ${req.body.defaulter_name} has been successfully submitted and stored.`,
+            sending_time: new Date().toISOString()
+        });
+
+        // Notify Parent if sub-member
+        if (isSubMember) {
+            await Notification.create({
+                member_id: organizationId,
+                message_title: "New Sub-member Activity 🛡️",
+                message_content: `Your sub-member ${req.user.name} has added a new defaulter: ${req.body.defaulter_name}.`,
+                sending_time: new Date().toISOString()
+            });
+        }
+
         // Log the activity
         await logActivity(req, {
             userId: req.user.id,
@@ -46,7 +93,7 @@ exports.reportDefaulter = async (req, res) => {
 
 exports.searchDefaulter = async (req, res) => {
     try {
-        const { gst, pan, cin, aadhar, name, state, district, subDistrict, address, includePending } = req.query;
+        const { gst, pan, cin, aadhar, name, state, district, subDistrict, city, address, includePending } = req.query;
         let query = includePending === 'true' ? { status: { $ne: 2 } } : { status: 1 };
 
         if (gst) query.gst_number = { $regex: gst, $options: "i" };
@@ -80,6 +127,7 @@ exports.searchDefaulter = async (req, res) => {
         if (state) query.state = state;
         if (district) query.district = district;
         if (subDistrict) query.cities = subDistrict;
+        if (city) query.city = city;
 
         let reports = await DefaulterReport.find(query).populate('user_id', 'name companyName').sort({ createdAt: -1 });
 
@@ -103,7 +151,7 @@ exports.searchDefaulter = async (req, res) => {
             }
         }
 
-        let historyFilters = { gst, pan, cin, aadhar, name, state, district, subDistrict, address };
+        let historyFilters = { gst, pan, cin, aadhar, name, state, district, subDistrict, city, address };
         if (reports.length > 0) {
             const first = reports[0];
             historyFilters = {
@@ -136,11 +184,21 @@ exports.searchDefaulter = async (req, res) => {
             };
         }
 
-        await SearchHistory.create({
+        const searchRecord = await SearchHistory.create({
             user_id: req.user.id, // History is still personal
             filters: historyFilters,
             resultCount: reports.length
         });
+
+        // Notify user about search result (only if they found something)
+        if (reports.length > 0) {
+            await Notification.create({
+                member_id: req.user.id,
+                message_title: "Search Results Found 🔎",
+                message_content: `Your search returned ${reports.length} matching defaulter(s) in the database.`,
+                sending_time: new Date().toISOString()
+            });
+        }
 
         // Log clinical activity
         await logActivity(req, {
@@ -245,11 +303,11 @@ exports.updateReport = async (req, res) => {
         const report = await DefaulterReport.findOne({ _id: req.params.id, user_id: userId });
         if (!report) return res.status(404).json({ msg: "Report not found or unauthorized" });
 
-        // Check if edit window (24 hours) has expired
-        const lastModified = report.updatedAt || report.createdAt;
-        const diffInHours = (Date.now() - new Date(lastModified).getTime()) / (1000 * 60 * 60);
+        // Check if edit window (24 hours) has expired from calculation of CREATED DATE
+        const reportAdded = report.createdAt;
+        const diffInHours = (Date.now() - new Date(reportAdded).getTime()) / (1000 * 60 * 60);
         if (diffInHours > 24) {
-            return res.status(403).json({ msg: "The edit window for this record has expired (24 hours after last modification)." });
+            return res.status(403).json({ msg: "The edit window for this record has expired (24 hours after creation)." });
         }
 
         const updateData = { ...req.body };
@@ -440,7 +498,7 @@ exports.memberApproveSubReport = async (req, res) => {
 
         const userId = req.user.id; // Must be primary member
         const report = await DefaulterReport.findOne({ _id: reportId, user_id: userId });
-        
+
         if (!report) {
             return res.status(404).json({ msg: "Report not found or unauthorized" });
         }
@@ -472,7 +530,7 @@ exports.getActivityLogs = async (req, res) => {
         const logs = await ActivityLog.find({ parentId: organizationId })
             .sort({ createdAt: -1 })
             .limit(100);
-        
+
         return res.status(200).json({ data: logs });
     } catch (err) {
         console.error("Error fetching logs:", err);

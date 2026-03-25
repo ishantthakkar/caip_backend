@@ -1,6 +1,7 @@
 const SubMember = require("../models/SubMember");
 const logActivity = require("../middleware/activityLogger");
 const User = require("../models/User");
+const Notification = require("../models/Notification");
 
 exports.createSubMember = async (req, res) => {
     try {
@@ -14,7 +15,7 @@ exports.createSubMember = async (req, res) => {
         const parentUser = await User.findById(parentId);
         const limit = parentUser?.subMemberLimit || 0;
         const count = await SubMember.countDocuments({ parentId });
-        
+
         if (count >= limit) {
             return res.status(400).json({ msg: `Maximum limit of ${limit} sub-members reached for your current plan` });
         }
@@ -24,7 +25,15 @@ exports.createSubMember = async (req, res) => {
             email,
             phone,
             parentId,
-            isActive: false // Default to false
+            isActive: true // Default to true
+        });
+
+        // Notify Member
+        await Notification.create({
+            member_id: parentId,
+            message_title: "Sub-member Added 👤",
+            message_content: `A new sub-member account for ${firstName} (${email}) has been successfully created.`,
+            sending_time: new Date().toISOString()
         });
 
         // Log the activity
