@@ -8,12 +8,14 @@ const { PORT } = require("./config/config");
 // Initialize app
 const app = express();
 
+// Increase payload limits for large document uploads
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
 // Middleware
 const dbMiddleware = require("./middleware/dbMiddleware");
 app.use(dbMiddleware);
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Root and Health Check
@@ -37,6 +39,16 @@ app.use("/api", defaulterRoutes);
 app.use("/api", locationRoutes);
 app.use("/api", notificationRoutes);
 app.use("/api/sub-members", subMemberRoutes);
+
+// Global Error Handler - Convert HTML errors to JSON for easier debugging
+app.use((err, req, res, next) => {
+    console.error("Critical System Error:", err);
+    res.status(500).json({
+        msg: "A critical server error occurred.",
+        error: err.message,
+        path: req.path
+    });
+});
 
 // Start server
 if (require.main === module) {

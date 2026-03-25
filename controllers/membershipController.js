@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const MembershipPlan = require("../models/MembershipPlan");
 const User = require("../models/User");
-
+const Notification = require("../models/Notification");
 const Transaction = require("../models/Transaction");
 
 exports.getMembershipPlans = async (req, res) => {
@@ -46,7 +46,8 @@ exports.purchaseMembership = async (req, res) => {
             plan = {
                 _id: 'debug-plan',
                 duration: '1 year',
-                price: 3000
+                price: 3000,
+                name: 'Standard Membership (Debug)'
             };
         } else {
             if (!mongoose.Types.ObjectId.isValid(planId)) {
@@ -84,6 +85,14 @@ exports.purchaseMembership = async (req, res) => {
             user.memberId = `CAIP${Math.floor(1000 + Math.random() * 9000)}`;
         }
         await user.save();
+
+        // Notify Admin
+        await Notification.create({
+            member_id: 'Admin',
+            message_title: "New Membership Purchase 💰",
+            message_content: `User ${user.name} (${user.companyName}) has purchased the ${user.planName}.`,
+            sending_time: new Date().toISOString()
+        });
 
         // Record Transaction
         const txNo = `TRN${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -182,4 +191,3 @@ exports.getPaymentReconciliation = async (req, res) => {
         return res.status(500).json({ msg: "Error fetching reconciliation data" });
     }
 };
-

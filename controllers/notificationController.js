@@ -73,6 +73,17 @@ exports.getMemberNotifications = async (req, res) => {
     }
 };
 
+exports.getAdminAlerts = async (req, res) => {
+    try {
+        // Fetch notifications specifically for 'Admin'
+        const list = await Notification.find({ member_id: 'Admin' }).sort({ createdAt: -1 }).limit(30);
+        return res.status(200).json({ data: list });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "DB Error" });
+    }
+};
+
 exports.markAllRead = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -84,5 +95,19 @@ exports.markAllRead = async (req, res) => {
     } catch (err) {
         console.error(err);
         return res.status(500).json({ msg: "Mark as read error" });
+    }
+};
+
+exports.markAdminAlertsRead = async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        await Notification.updateMany(
+            { member_id: 'Admin' },
+            { $addToSet: { read_by: adminId } }
+        );
+        return res.status(200).json({ msg: "Admin alerts cleared" });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "Admin read error" });
     }
 };

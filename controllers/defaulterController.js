@@ -74,6 +74,14 @@ exports.reportDefaulter = async (req, res) => {
             });
         }
 
+        // Notify Admin
+        await Notification.create({
+            member_id: 'Admin',
+            message_title: "New Defaulter Reported 🛡️",
+            message_content: `A new defaulter ${req.body.defaulter_name} (${req.body.gst_number || 'N/A'}) has been added to the database by ${user.companyName || user.name}.`,
+            sending_time: new Date().toISOString()
+        });
+
         // Log the activity
         await logActivity(req, {
             userId: req.user.id,

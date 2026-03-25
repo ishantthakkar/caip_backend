@@ -2,37 +2,54 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const SubMember = require("../models/SubMember");
+const Notification = require("../models/Notification");
 const { JWT_SECRET } = require("../config/config");
 const logActivity = require("../middleware/activityLogger");
 
 exports.register = async (req, res) => {
     try {
-        const { name, email, password, phone, state, district, subDistrict, city, gst, pan, role, companyName, businessAddress } = req.body;
-        const businessDocuments = req.files ? req.files.map(file => file.filename) : [];
+        console.log("Registration process started for:", req.body.email || "unknown");
+        
+        let { name, email, password, phone, state, district, subDistrict, city, gst, pan, role, companyName, businessAddress } = req.body;
+
+        // Correct file mapping for upload.fields
+        const businessDocuments = req.files && req.files.businessDocuments
+            ? req.files.businessDocuments.map(file => file.filename)
+            : [];
 
         if (!name || !email || !phone || !state || !district || !subDistrict) {
-            return res.status(400).json({ msg: "Required fields are missing" });
+            console.warn("Registration validation failed: Missing mandatory fields");
+            return res.status(400).json({ msg: "Required fields are missing: Name, Email, Phone, State, District, and Sub-District are mandatory." });
         }
 
-        const existingEmail = await User.findOne({ email });
-        if (existingEmail) return res.status(400).json({ msg: "Email already exists" });
+        const normalizedEmail = email.toLowerCase().trim();
+        const trimmedPhone = phone.toString().trim();
 
-        const existingPhone = await User.findOne({ phone });
-        if (existingPhone) return res.status(400).json({ msg: "Phone number already exists" });
+        // Database checks
+        const existingEmail = await User.findOne({ email: normalizedEmail });
+        if (existingEmail) return res.status(400).json({ msg: "A user with this email address already exists." });
 
-        var hashedPassword = "";
+        const existingPhone = await User.findOne({ phone: trimmedPhone });
+        if (existingPhone) return res.status(400).json({ msg: "A user with this phone number already exists." });
+
+        // Hash management
+        let hashedPassword = "";
         if (password) {
             hashedPassword = await bcrypt.hash(password, 10);
+        } else {
+            hashedPassword = await bcrypt.hash(Math.random().toString(36).slice(-8), 10);
         }
 
+        // Member ID calculation
         const count = await User.countDocuments();
         const memberId = `CAIP${String(count + 1).padStart(5, '0')}`;
 
+        // Create User
         const result = await User.create({
-            name,
-            email,
+            name: name.trim(),
+            email: normalizedEmail,
             password: hashedPassword,
-            phone,
+            phone: trimmedPhone,
             state,
             district,
             subDistrict,
@@ -42,16 +59,44 @@ exports.register = async (req, res) => {
             pan: pan || "",
             companyName: companyName || "",
             businessAddress: businessAddress || "",
-            role: 2,
-            status: 0,
-            membership_status: 0,
+            role: "2",
+            status: "0",
+            membership_status: "0",
             memberId: memberId
         });
 
-        return res.status(201).json({ msg: "Success created", userId: result._id, data: result });
+        console.log(`Success: Registered user ${memberId} - ${normalizedEmail}`);
+
+        // Notify Admin (Independent task)
+        try {
+            await Notification.create({
+                member_id: 'Admin',
+                message_title: "New Member Alert 📣",
+                message_content: `Registration received from ${companyName || name} (ID: ${memberId}). Please verify documents.`,
+                sending_time: new Date().toISOString()
+            });
+        } catch (notifErr) {
+            console.error("Non-fatal: Admin notification failed during registration:", notifErr);
+        }
+
+        return res.status(201).json({ 
+            msg: "Registration successful! Your portal access is pending admin verification.", 
+            userId: result._id, 
+            data: {
+                id: result._id,
+                name: result.name,
+                email: result.email,
+                memberId: result.memberId
+            }
+        });
+
     } catch (err) {
-        console.error("Register Error:", err);
-        return res.status(500).json({ msg: "Internal server error", error: err.message });
+        console.error("Critical Registration Failure:", err);
+        return res.status(500).json({ 
+            msg: "Registration system encountered a problem.", 
+            error: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 };
 
@@ -92,8 +137,7 @@ exports.login = async (req, res) => {
             }
         }
 
-        // In a real scenario, we would send an SMS here. 
-        // For now, we use static OTP: 123456
+        // OTP static 123456
         return res.status(200).json({ msg: "OTP sent successfully", status: "otp_sent" });
 
     } catch (err) {
@@ -132,7 +176,6 @@ exports.verifyOtp = async (req, res) => {
                 return res.status(403).json({ msg: "Account not approved" });
             }
         } else {
-            // For sub-members, also verify the parent account is approved
             const parent = await User.findById(user.parentId);
             if (!parent || (parent.status !== "1" && parent.status !== 1)) {
                 return res.status(403).json({ msg: "Parent account not approved or deactivated." });
@@ -148,7 +191,6 @@ exports.verifyOtp = async (req, res) => {
         user.token = token;
         await user.save();
 
-        // Log the activity
         await logActivity(req, {
             userId: user._id,
             userRole: isSubMember ? 'sub-member' : 'member',
@@ -159,7 +201,6 @@ exports.verifyOtp = async (req, res) => {
         });
 
         if (isSubMember) {
-            // For sub-members, we need to return the parent's info but keep track that it's a sub-user
             const parent = await User.findById(user.parentId);
             return res.status(200).json({
                 msg: "Login successful (Sub-Member)",
@@ -207,7 +248,6 @@ exports.adminLogin = async (req, res) => {
         user.token = token;
         await user.save();
 
-        // Log the activity
         await logActivity(req, {
             userId: user._id,
             userRole: 'admin',
