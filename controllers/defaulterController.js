@@ -24,7 +24,7 @@ exports.checkDuplicates = async (req, res) => {
             else if (pan && existing.pan_number === pan) field = "PAN";
             else if (mobile && existing.mobile_number === mobile) field = "Mobile";
             else if (address && existing.defaulter_address === address) field = "Address";
-            
+
             return res.status(200).json({ exists: true, field });
         }
         return res.status(200).json({ exists: false });
@@ -59,7 +59,7 @@ exports.reportDefaulter = async (req, res) => {
         // System Notification for the reporter
         await Notification.create({
             member_id: req.user.id,
-            message_title: "Defaulter Added ✅",
+            message_title: "Defaulter Added",
             message_content: `Your report for ${req.body.defaulter_name} has been successfully submitted and stored.`,
             sending_time: new Date().toISOString()
         });
@@ -68,7 +68,7 @@ exports.reportDefaulter = async (req, res) => {
         if (isSubMember) {
             await Notification.create({
                 member_id: organizationId,
-                message_title: "New Sub-member Activity 🛡️",
+                message_title: "New Sub-member Activity",
                 message_content: `Your sub-member ${req.user.name} has added a new defaulter: ${req.body.defaulter_name}.`,
                 sending_time: new Date().toISOString()
             });
@@ -77,7 +77,7 @@ exports.reportDefaulter = async (req, res) => {
         // Notify Admin
         await Notification.create({
             member_id: 'Admin',
-            message_title: "New Defaulter Reported 🛡️",
+            message_title: "New Defaulter Reported",
             message_content: `A new defaulter ${req.body.defaulter_name} (${req.body.gst_number || 'N/A'}) has been added to the database by ${user.companyName || user.name}.`,
             sending_time: new Date().toISOString()
         });
@@ -239,15 +239,38 @@ exports.getMyReports = async (req, res) => {
 exports.getDashboardStats = async (req, res) => {
     try {
         const userId = req.user.parentId || req.user.id;
+        const { timeframe } = req.query;
+
+        let dateFilter = {};
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        if (timeframe === 'today') {
+            dateFilter = { createdAt: { $gte: startOfToday } };
+        } else if (timeframe === 'last7days') {
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            dateFilter = { createdAt: { $gte: sevenDaysAgo } };
+        } else if (timeframe === 'thisMonth') {
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            dateFilter = { createdAt: { $gte: startOfMonth } };
+        } else if (timeframe === 'lastMonth') {
+            const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+            dateFilter = { createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth } };
+        }
+
+        const statsMatch = { user_id: new mongoose.Types.ObjectId(userId), ...dateFilter };
+
         const myReports = await DefaulterReport.find({ user_id: userId }).sort({ createdAt: -1 }).limit(5);
-        const totalReported = await DefaulterReport.countDocuments({ user_id: userId });
+        const totalReported = await DefaulterReport.countDocuments(statsMatch);
+
         const aggregateSum = await DefaulterReport.aggregate([
-            { $match: { user_id: new mongoose.Types.ObjectId(userId) } },
+            { $match: statsMatch },
             { $group: { _id: null, total: { $sum: "$default_amount" } } }
         ]);
 
         const recoveredSum = await DefaulterReport.aggregate([
-            { $match: { user_id: new mongoose.Types.ObjectId(userId) } },
+            { $match: statsMatch },
             { $unwind: { path: "$payments", preserveNullAndEmptyArrays: false } },
             { $group: { _id: null, total: { $sum: "$payments.amount" } } }
         ]);
@@ -257,11 +280,12 @@ exports.getDashboardStats = async (req, res) => {
         const recentActivities = await ActivityLog.find({ parentId: new mongoose.Types.ObjectId(userId) }).sort({ createdAt: -1 }).limit(5);
 
         const industryDist = await DefaulterReport.aggregate([
-            { $match: { user_id: new mongoose.Types.ObjectId(userId) } },
+            { $match: statsMatch },
             { $group: { _id: "$industry", count: { $sum: 1 } } }
         ]);
 
         const stateInsights = await DefaulterReport.aggregate([
+            { $match: dateFilter }, // State insights usually for all reported, but can be filtered by time
             { $group: { _id: "$state", count: { $sum: 1 }, totalAmount: { $sum: "$default_amount" } } },
             { $sort: { count: -1 } }
         ]);
