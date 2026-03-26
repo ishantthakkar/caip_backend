@@ -106,9 +106,14 @@ exports.updateProfile = async (req, res) => {
             }
         });
 
-        if (req.files && req.files.length > 0) {
-            const filePaths = req.files.map(f => f.filename);
-            user.businessDocuments = [...(user.businessDocuments || []), ...filePaths];
+        if (req.files) {
+            if (req.files.businessDocuments && req.files.businessDocuments.length > 0) {
+                const filePaths = req.files.businessDocuments.map(f => f.filename);
+                user.businessDocuments = [...(user.businessDocuments || []), ...filePaths];
+            }
+            if (req.files.profileImage && req.files.profileImage.length > 0) {
+                user.profileImage = req.files.profileImage[0].filename;
+            }
         }
 
         await user.save();

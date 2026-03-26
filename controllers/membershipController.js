@@ -6,31 +6,21 @@ const Transaction = require("../models/Transaction");
 
 exports.getMembershipPlans = async (req, res) => {
     try {
-        console.log('Fetching membership plans...');
-        // Try to fetch from MembershipPlan model first
-        let plans = await MembershipPlan.find({ isActive: true });
-
-        if (plans.length === 0) {
-            // Fallback to raw collection if model is empty (legacy)
-            const rawCollection = mongoose.connection.db.collection('membership_plans');
-            plans = await rawCollection.find({}).toArray();
-        }
-
-        if (plans.length === 0) {
-            plans = [{
-                _id: 'debug-plan',
-                name: 'Standard Membership (Debug)',
-                price: 3000,
-                duration: '1 year',
-                benefits: ['Search defaulter database', 'Report defaulter'],
-                subMemberLimit: 5
-            }];
-        }
-
+        console.log('Fetching active membership plans...');
+        const plans = await MembershipPlan.find({ isActive: true }).sort({ createdAt: -1 });
         return res.status(200).json({ data: plans });
     } catch (err) {
         console.error('Error fetching membership plans:', err);
         return res.status(500).json({ msg: "Server error", error: err.message });
+    }
+};
+
+exports.getAllMembershipPlans = async (req, res) => {
+    try {
+        const plans = await MembershipPlan.find().sort({ createdAt: -1 });
+        return res.status(200).json({ data: plans });
+    } catch (err) {
+        return res.status(500).json({ msg: "Server error" });
     }
 };
 
@@ -40,7 +30,7 @@ exports.purchaseMembership = async (req, res) => {
         if (!user) return res.status(404).json({ msg: "User not found" });
 
         const { planId } = req.body;
-        
+
         let plan;
         if (planId === 'debug-plan') {
             plan = {
@@ -89,7 +79,7 @@ exports.purchaseMembership = async (req, res) => {
         // Notify Admin
         await Notification.create({
             member_id: 'Admin',
-            message_title: "New Membership Purchase 💰",
+            message_title: "New Membership Purchase",
             message_content: `User ${user.name} (${user.companyName}) has purchased the ${user.planName}.`,
             sending_time: new Date().toISOString()
         });
@@ -131,14 +121,21 @@ exports.createMemberPlan = async (req, res) => {
 exports.updateMemberPlan = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, price, duration, benefits, subMemberLimit } = req.body;
-        const plan = await MembershipPlan.findByIdAndUpdate(id, {
+        const { name, price, duration, benefits, subMemberLimit, isActive } = req.body;
+        
+        const updateData = {
             name,
             price,
             duration,
             benefits: Array.isArray(benefits) ? benefits : (typeof benefits === 'string' ? benefits.split(",").map(b => b.trim()) : benefits),
             subMemberLimit: parseInt(subMemberLimit) || 0
-        }, { new: true });
+        };
+
+        if (isActive !== undefined) {
+            updateData.isActive = isActive;
+        }
+
+        const plan = await MembershipPlan.findByIdAndUpdate(id, updateData, { new: true });
         if (!plan) return res.status(404).json({ msg: "Plan not found" });
         return res.status(200).json({ msg: "Plan updated", data: plan });
     } catch (err) {
@@ -177,8 +174,8 @@ exports.getPaymentReconciliation = async (req, res) => {
         // Search filter (Post-fetch for regex on populated fields if needed, or refine query)
         if (search) {
             const term = search.toLowerCase();
-            transactions = transactions.filter(tx => 
-                tx.txNo.toLowerCase().includes(term) || 
+            transactions = transactions.filter(tx =>
+                tx.txNo.toLowerCase().includes(term) ||
                 (tx.user_id?.name || '').toLowerCase().includes(term) ||
                 (tx.user_id?.companyName || '').toLowerCase().includes(term) ||
                 (tx.user_id?.memberId || '').toLowerCase().includes(term)

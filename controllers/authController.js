@@ -9,7 +9,7 @@ const logActivity = require("../middleware/activityLogger");
 exports.register = async (req, res) => {
     try {
         console.log("Registration process started for:", req.body.email || "unknown");
-        
+
         let { name, email, password, phone, state, district, subDistrict, city, gst, pan, role, companyName, businessAddress } = req.body;
 
         // Correct file mapping for upload.fields
@@ -71,7 +71,7 @@ exports.register = async (req, res) => {
         try {
             await Notification.create({
                 member_id: 'Admin',
-                message_title: "New Member Alert 📣",
+                message_title: "New Member Alert",
                 message_content: `Registration received from ${companyName || name} (ID: ${memberId}). Please verify documents.`,
                 sending_time: new Date().toISOString()
             });
@@ -79,9 +79,9 @@ exports.register = async (req, res) => {
             console.error("Non-fatal: Admin notification failed during registration:", notifErr);
         }
 
-        return res.status(201).json({ 
-            msg: "Registration successful! Your portal access is pending admin verification.", 
-            userId: result._id, 
+        return res.status(201).json({
+            msg: "Registration successful! Your portal access is pending admin verification.",
+            userId: result._id,
             data: {
                 id: result._id,
                 name: result.name,
@@ -92,8 +92,8 @@ exports.register = async (req, res) => {
 
     } catch (err) {
         console.error("Critical Registration Failure:", err);
-        return res.status(500).json({ 
-            msg: "Registration system encountered a problem.", 
+        return res.status(500).json({
+            msg: "Registration system encountered a problem.",
             error: err.message,
             stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
         });

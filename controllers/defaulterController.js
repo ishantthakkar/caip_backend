@@ -8,23 +8,26 @@ const Notification = require("../models/Notification");
 
 exports.checkDuplicates = async (req, res) => {
     try {
-        const { gst, pan, mobile, address } = req.query;
-        if (!gst && !pan && !mobile && !address) return res.status(400).json({ msg: "Query required" });
+        const { gst, pan, mobile, address, name } = req.query;
+        if (!gst && !pan && !mobile && !address && !name) return res.status(400).json({ msg: "Query required" });
 
         const queries = [];
         if (gst) queries.push({ gst_number: gst });
         if (pan) queries.push({ pan_number: pan });
         if (mobile) queries.push({ mobile_number: mobile });
         if (address) queries.push({ defaulter_address: address });
+        if (name) queries.push({ defaulter_name: { $regex: new RegExp(`^${name}$`, "i") } });
 
         const existing = await DefaulterReport.findOne({ $or: queries });
         if (existing) {
-            let field = "Details";
-            if (gst && existing.gst_number === gst) field = "GST";
-            else if (pan && existing.pan_number === pan) field = "PAN";
-            else if (mobile && existing.mobile_number === mobile) field = "Mobile";
-            else if (address && existing.defaulter_address === address) field = "Address";
+            const matchedFields = [];
+            if (gst && existing.gst_number === gst) matchedFields.push("GST");
+            if (pan && existing.pan_number === pan) matchedFields.push("PAN");
+            if (mobile && existing.mobile_number === mobile) matchedFields.push("Mobile");
+            if (address && existing.defaulter_address === address) matchedFields.push("Address");
+            if (name && existing.defaulter_name?.toLowerCase() === name.toLowerCase()) matchedFields.push("Defaulter Name");
 
+            const field = matchedFields.length > 0 ? matchedFields.join(", ") : "Details";
             return res.status(200).json({ exists: true, field });
         }
         return res.status(200).json({ exists: false });
@@ -172,6 +175,7 @@ exports.searchDefaulter = async (req, res) => {
                 state: first.state,
                 district: first.district,
                 subDistrict: first.cities,
+                city: first.city,
                 address: first.defaulter_address,
                 email: first.email_id,
                 mobile: first.mobile_number,
@@ -202,7 +206,7 @@ exports.searchDefaulter = async (req, res) => {
         if (reports.length > 0) {
             await Notification.create({
                 member_id: req.user.id,
-                message_title: "Search Results Found 🔎",
+                message_title: "Search Results Found",
                 message_content: `Your search returned ${reports.length} matching defaulter(s) in the database.`,
                 sending_time: new Date().toISOString()
             });
@@ -397,22 +401,48 @@ exports.addPayment = async (req, res) => {
 
 exports.getAdminDashboardStats = async (req, res) => {
     try {
-        const totalReported = await DefaulterReport.countDocuments();
+        const { timeframe } = req.query;
+
+        let dateFilter = {};
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        if (timeframe === 'today') {
+            dateFilter = { createdAt: { $gte: startOfToday } };
+        } else if (timeframe === 'last7days') {
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            dateFilter = { createdAt: { $gte: sevenDaysAgo } };
+        } else if (timeframe === 'thisMonth') {
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            dateFilter = { createdAt: { $gte: startOfMonth } };
+        } else if (timeframe === 'lastMonth') {
+            const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+            dateFilter = { createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth } };
+        }
+
+        const statsMatch = { ...dateFilter };
+
+        const totalReported = await DefaulterReport.countDocuments(statsMatch);
 
         const aggregateSum = await DefaulterReport.aggregate([
+            { $match: statsMatch },
             { $group: { _id: null, total: { $sum: "$default_amount" } } }
         ]);
 
         const recoveredSum = await DefaulterReport.aggregate([
+            { $match: statsMatch },
             { $unwind: { path: "$payments", preserveNullAndEmptyArrays: false } },
             { $group: { _id: null, total: { $sum: "$payments.amount" } } }
         ]);
 
         const industryDist = await DefaulterReport.aggregate([
+            { $match: statsMatch },
             { $group: { _id: "$industry", count: { $sum: 1 } } }
         ]);
 
         const stateInsights = await DefaulterReport.aggregate([
+            { $match: dateFilter },
             {
                 $group: {
                     _id: "$state",
@@ -436,14 +466,16 @@ exports.getAdminDashboardStats = async (req, res) => {
         ]);
 
         const recentReports = await DefaulterReport.find()
-            .populate('user_id', 'name')
+            .populate('user_id', 'name companyName')
             .sort({ createdAt: -1 })
             .limit(5);
 
         const searchHistory = await SearchHistory.find()
-            .populate('user_id', 'name')
+            .populate('user_id', 'name companyName')
             .sort({ createdAt: -1 })
             .limit(5);
+
+        const totalMembers = await User.countDocuments(dateFilter);
 
         const dbTransactions = await require("../models/Transaction").find()
             .populate('user_id', 'name companyName')
@@ -454,7 +486,7 @@ exports.getAdminDashboardStats = async (req, res) => {
             id: tx._id,
             txNo: tx.txNo,
             member: tx.user_id?.name || 'Unknown',
-            company: tx.user_id?.companyName || 'N/A',
+            companyName: tx.user_id?.companyName || 'N/A',
             amount: tx.amount,
             type: tx.type
         }));
@@ -463,7 +495,8 @@ exports.getAdminDashboardStats = async (req, res) => {
             summary: {
                 totalReported,
                 totalAmount: aggregateSum[0]?.total || 0,
-                totalRecovered: recoveredSum[0]?.total || 0
+                totalRecovered: recoveredSum[0]?.total || 0,
+                totalMembers
             },
             industryDist: industryDist.map(item => ({ name: item._id || 'Uncategorized', value: item.count })),
             stateInsights: stateInsights.map(item => ({

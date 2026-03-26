@@ -76,6 +76,7 @@ const userSchema = new mongoose.Schema({
     companyName: { type: String, default: "" },
     memberId: { type: String, default: "" },
     rejectionReason: { type: String, default: "" },
+    profileImage: { type: String, default: null },
     token: String
 }, { timestamps: true });
 
