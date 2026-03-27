@@ -5,6 +5,7 @@ const SubMember = require("../models/SubMember");
 const Notification = require("../models/Notification");
 const { JWT_SECRET } = require("../config/config");
 const logActivity = require("../middleware/activityLogger");
+const emailService = require("../utils/emailService");
 
 exports.register = async (req, res) => {
     try {
@@ -66,8 +67,13 @@ exports.register = async (req, res) => {
         });
 
         console.log(`Success: Registered user ${memberId} - ${normalizedEmail}`);
-
-        // Notify Admin (Independent task)
+        
+        // --- Email Notifications ---
+        const memberData = { name: name.trim(), email: normalizedEmail, memberId, companyName, phone: trimmedPhone };
+        emailService.sendRegistrationEmail(memberData); // Fire-and-forget for registration email
+        emailService.notifyAdminOnRegistration(memberData); // Notify admin by email too
+        
+        // Notify Admin (Internal Database Notification)
         try {
             await Notification.create({
                 member_id: 'Admin',
@@ -280,7 +286,7 @@ exports.verifyGst = async (req, res) => {
             return res.status(400).json({ msg: "GST number is required" });
         }
 
-        const apiUrl = `https://sheet.gstincheck.co.in/check/a01b8bb87c9abff4cef43e4dd122ae94/${gst}`;
+        const apiUrl = `https://sheet.gstincheck.co.in/check/3294107c41d9191fd2857916d99d23c2/${gst}`;
         const response = await fetch(apiUrl);
         const data = await response.json();
 

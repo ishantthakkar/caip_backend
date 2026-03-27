@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const emailService = require("../utils/emailService");
 
 exports.getUsers = async (req, res) => {
     try {
@@ -27,6 +28,14 @@ exports.changeStatus = async (req, res) => {
             user.rejectionReason = ""; // Clear if approved
         }
         await user.save();
+
+        // Send Email Notification
+        emailService.sendStatusUpdateEmail({ 
+            name: user.name, 
+            email: user.email, 
+            status: user.status, 
+            rejectionReason: user.rejectionReason 
+        });
 
         return res.status(200).json({
             msg: "User status updated successfully",

@@ -7,7 +7,7 @@ exports.createSubMember = async (req, res) => {
     try {
         const { firstName, email, phone, parentId } = req.body;
 
-        if (!firstName || !email || !phone || !parentId) {
+        if (!firstName || !phone || !parentId) {
             return res.status(400).json({ msg: "All fields are required" });
         }
 

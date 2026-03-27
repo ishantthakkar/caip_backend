@@ -5,6 +5,7 @@ const SearchHistory = require("../models/SearchHistory");
 const ActivityLog = require("../models/ActivityLog");
 const logActivity = require("../middleware/activityLogger");
 const Notification = require("../models/Notification");
+const emailService = require("../utils/emailService");
 
 exports.checkDuplicates = async (req, res) => {
     try {
@@ -58,6 +59,12 @@ exports.reportDefaulter = async (req, res) => {
         });
 
         await report.save();
+
+        // Send Email Notification
+        emailService.sendDefaulterAdditionEmail(
+            { name: user.name, email: user.email, companyName: user.companyName },
+            report
+        );
 
         // System Notification for the reporter
         await Notification.create({
@@ -143,7 +150,7 @@ exports.searchDefaulter = async (req, res) => {
         let reports = await DefaulterReport.find(query).populate('user_id', 'name companyName').sort({ createdAt: -1 });
 
         // Enhanced: if identifier search finds a record, also fetch other records sharing the same address
-        if (gst || pan || cin || aadhar || name) {
+        if (gst || pan || cin || aadhar) {
             const matchedAddresses = reports
                 .map(r => r.defaulter_address)
                 .filter(a => a && a.trim().length > 5); // Filter out empty or too short generic addresses

@@ -21,6 +21,7 @@
     "mongoose": "^9.2.4",
     "multer": "^2.1.1",
     "mysql2": "^3.19.0",
+    "nodemailer": "^8.0.4",
     "serverless-http": "^4.0.0",
     "winston": "^3.19.0"
   }
