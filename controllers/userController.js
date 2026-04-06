@@ -90,7 +90,19 @@ exports.getProfile = async (req, res) => {
             }
         }
 
-        return res.status(200).json({ msg: "Profile fetched successfully", data: user });
+        // Fetch user activity counts
+        const SearchHistory = require("../models/SearchHistory");
+        const DefaulterReport = require("../models/DefaulterReport");
+
+        const searchCount = await SearchHistory.countDocuments({ user_id: req.user.id });
+        const reportCount = await DefaulterReport.countDocuments({ reported_by_id: req.user.id });
+
+        // Convert user to object and add counts
+        const userData = user.toObject();
+        userData.searchCount = searchCount;
+        userData.reportCount = reportCount;
+
+        return res.status(200).json({ msg: "Profile fetched successfully", data: userData });
     } catch (err) {
         console.error(err);
         return res.status(500).json({ msg: "Server error" });

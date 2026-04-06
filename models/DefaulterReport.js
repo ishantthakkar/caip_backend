@@ -30,10 +30,21 @@ const defaulterReportSchema = new mongoose.Schema({
     case_number: String,
     case_year: String,
     case_status: String,
+    legal_status_taken: { type: Boolean, default: false },
+    defaulter_persons: [{
+        name: String,
+        pan: String,
+        aadhar: String
+    }],
     payments: [{
         amount: Number,
-        date: Date
-    }]
+        date: Date,
+        type: { type: String, enum: ['partial', 'settlement'], default: 'partial' }
+    }],
+    isSettled: { type: Boolean, default: false },
+    settledAmount: Number,
+    settledBy: String,
+    settlementDate: Date
 }, { timestamps: true });
 
 const DefaulterReport = mongoose.model("defaulter_report", defaulterReportSchema);

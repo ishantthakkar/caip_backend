@@ -10,13 +10,13 @@ async function seedDefaulters() {
         console.log('Connected to Local MongoDB');
 
         // Target specific user ID
-        const targetUserId = '69ba424ce35f5d9597dacace';
+        const targetUserId = '69cf56b7acaf2a2a460ca747';
         const user = await User.findById(targetUserId);
-        
+
         if (!user) {
             console.warn(`User with ID ${targetUserId} not found. Using generic IDs for associations.`);
         }
-        
+
         const effectiveUserId = user ? user._id : new mongoose.Types.ObjectId(targetUserId);
         const name = user ? user.name : 'Target User';
         console.log(`Using user ID: ${effectiveUserId} (${name}) for reports.`);
@@ -33,10 +33,10 @@ async function seedDefaulters() {
         ];
 
         const fakeReports = [];
-        for (let i = 1; i <= 50; i++) {
+        for (let i = 1; i <= 100; i++) {
             const amount = Math.floor(Math.random() * 500000) + 10000;
             const outstanding = amount - (Math.random() > 0.7 ? Math.floor(Math.random() * (amount * 0.5)) : 0);
-            
+
             fakeReports.push({
                 user_id: effectiveUserId,
                 reported_by_id: effectiveUserId,

@@ -49,8 +49,20 @@ exports.reportDefaulter = async (req, res) => {
         const isSubMember = !!req.user.parentId;
         const organizationId = isSubMember ? req.user.parentId : req.user.id;
 
+        const reportData = { ...req.body };
+        if (reportData.legal_status_taken === 'true') reportData.legal_status_taken = true;
+        if (reportData.legal_status_taken === 'false') reportData.legal_status_taken = false;
+
+        if (typeof reportData.defaulter_persons === 'string') {
+            try {
+                reportData.defaulter_persons = JSON.parse(reportData.defaulter_persons);
+            } catch (e) {
+                reportData.defaulter_persons = [];
+            }
+        }
+
         const report = new DefaulterReport({
-            ...req.body,
+            ...reportData,
             user_id: organizationId,
             reported_by_id: req.user.id,
             reported_by_role: isSubMember ? 'sub-member' : 'member',
@@ -111,13 +123,29 @@ exports.reportDefaulter = async (req, res) => {
 
 exports.searchDefaulter = async (req, res) => {
     try {
-        const { gst, pan, cin, aadhar, name, state, district, subDistrict, city, address, includePending } = req.query;
+        const { gst, pan, cin, aadhar, mobile, name, member_name, state, district, subDistrict, city, address, includePending, defaultLoad } = req.query;
         let query = includePending === 'true' ? { status: { $ne: 2 } } : { status: 1 };
+
+        if (member_name) {
+            const matchedUsers = await User.find({
+                $or: [
+                    { name: { $regex: member_name, $options: "i" } },
+                    { companyName: { $regex: member_name, $options: "i" } }
+                ]
+            });
+            const userIds = matchedUsers.map(u => u._id);
+            if (userIds.length > 0) {
+                query.user_id = { $in: userIds };
+            } else {
+                return res.status(200).json({ data: [] });
+            }
+        }
 
         if (gst) query.gst_number = { $regex: gst, $options: "i" };
         if (pan) query.pan_number = { $regex: pan, $options: "i" };
         if (cin) query.cin_number = { $regex: cin, $options: "i" };
         if (aadhar) query.aadhar_number = { $regex: aadhar, $options: "i" };
+        if (mobile) query.mobile_number = { $regex: mobile, $options: "i" };
         if (name) {
             const keywords = name.trim().split(/\s+/).filter(k =>
                 k.length > 2 && !['limited', 'private', 'pvt', 'ltd', 'company', 'corp'].includes(k.toLowerCase())
@@ -146,8 +174,9 @@ exports.searchDefaulter = async (req, res) => {
         if (district) query.district = district;
         if (subDistrict) query.cities = subDistrict;
         if (city) query.city = city;
+        let reportsQuery = DefaulterReport.find(query).populate('user_id', 'name companyName').sort({ createdAt: -1 });
 
-        let reports = await DefaulterReport.find(query).populate('user_id', 'name companyName').sort({ createdAt: -1 });
+        let reports = await reportsQuery;
 
         // Enhanced: if identifier search finds a record, also fetch other records sharing the same address
         if (gst || pan || cin || aadhar) {
@@ -169,11 +198,17 @@ exports.searchDefaulter = async (req, res) => {
             }
         }
 
-        let historyFilters = { gst, pan, cin, aadhar, name, state, district, subDistrict, city, address };
+        let historyFilters = { gst, pan, cin, aadhar, mobile, name, member_name, state, district, subDistrict, city, address };
+        // Clean undefined/empty filters
+        Object.keys(historyFilters).forEach(key => {
+            if (historyFilters[key] === undefined || historyFilters[key] === '' || historyFilters[key] === null) {
+                delete historyFilters[key];
+            }
+        });
+        let resultData = null;
         if (reports.length > 0) {
             const first = reports[0];
-            historyFilters = {
-                ...historyFilters,
+            resultData = {
                 name: first.defaulter_name,
                 gst: first.gst_number,
                 pan: first.pan_number,
@@ -199,35 +234,43 @@ exports.searchDefaulter = async (req, res) => {
                 case_status: first.case_status,
                 attachment_documents: first.attachment_documents,
                 payments: first.payments,
+                isSettled: first.isSettled,
+                settledAmount: first.settledAmount,
+                settledBy: first.settledBy,
+                settlementDate: first.settlementDate,
                 reported_by: first.user_id?.companyName || 'Verified Member'
             };
         }
 
-        const searchRecord = await SearchHistory.create({
-            user_id: req.user.id, // History is still personal
-            filters: historyFilters,
-            resultCount: reports.length
-        });
+        // Only create history and notifications if it's an actual user search (not a default page load)
+        if (defaultLoad !== 'true') {
+            const searchRecord = await SearchHistory.create({
+                user_id: req.user.id, // History is still personal
+                filters: historyFilters,
+                resultData: resultData,
+                resultCount: reports.length
+            });
 
-        // Notify user about search result (only if they found something)
-        if (reports.length > 0) {
-            await Notification.create({
-                member_id: req.user.id,
-                message_title: "Search Results Found",
-                message_content: `Your search returned ${reports.length} matching defaulter(s) in the database.`,
-                sending_time: new Date().toISOString()
+            // Notify user about search result (only if they found something)
+            if (reports.length > 0) {
+                await Notification.create({
+                    member_id: req.user.id,
+                    message_title: "Search Results Found",
+                    message_content: `Your search returned ${reports.length} matching defaulter(s) in the database.`,
+                    sending_time: new Date().toISOString()
+                });
+            }
+
+            // Log clinical activity
+            await logActivity(req, {
+                userId: req.user.id,
+                userRole: req.user.parentId ? 'sub-member' : 'member',
+                userName: req.user.name || 'Unknown',
+                activityType: 'Defaulter Search',
+                details: `Searched for: ${gst || pan || cin || aadhar || name || address}. Records found: ${reports.length}`,
+                parentId: req.user.parentId || req.user.id
             });
         }
-
-        // Log clinical activity
-        await logActivity(req, {
-            userId: req.user.id,
-            userRole: req.user.parentId ? 'sub-member' : 'member',
-            userName: req.user.name || 'Unknown',
-            activityType: 'Defaulter Search',
-            details: `Searched for: ${gst || pan || cin || aadhar || name || address}. Records found: ${reports.length}`,
-            parentId: req.user.parentId || req.user.id
-        });
 
         return res.status(200).json({ data: reports });
     } catch (err) {
@@ -356,6 +399,17 @@ exports.updateReport = async (req, res) => {
         }
 
         const updateData = { ...req.body };
+        if (updateData.legal_status_taken === 'true') updateData.legal_status_taken = true;
+        if (updateData.legal_status_taken === 'false') updateData.legal_status_taken = false;
+
+        if (typeof updateData.defaulter_persons === 'string') {
+            try {
+                updateData.defaulter_persons = JSON.parse(updateData.defaulter_persons);
+            } catch (e) {
+                updateData.defaulter_persons = [];
+            }
+        }
+
         if (req.files && req.files.length > 0) {
             const newFiles = req.files.map(f => f.filename);
             updateData.attachment_documents = [...(report.attachment_documents || []), ...newFiles];
@@ -649,6 +703,47 @@ exports.adminGetActivityLogs = async (req, res) => {
     } catch (err) {
         console.error("Error fetching admin logs:", err);
         return res.status(500).json({ msg: "Error fetching admin activity history" });
+    }
+};
+
+exports.settleReport = async (req, res) => {
+    try {
+        const userId = req.user.parentId || req.user.id;
+        const report = await DefaulterReport.findOne({ _id: req.params.id, user_id: userId });
+        if (!report) return res.status(404).json({ msg: "Report not found or unauthorized" });
+
+        const { settledAmount, settledBy, settlementDate } = req.body;
+        
+        report.isSettled = true;
+        report.settledAmount = Number(settledAmount);
+        report.settledBy = settledBy;
+        report.settlementDate = new Date(settlementDate);
+        
+        // Add a settlement payment to the payments array
+        report.payments.push({
+            amount: Number(settledAmount),
+            date: new Date(settlementDate),
+            type: 'settlement'
+        });
+
+        // Set outstanding to 0 as it's settled
+        report.outstanding_amount = 0;
+
+        await report.save();
+
+        await logActivity(req, {
+            userId: req.user.id,
+            userRole: req.user.parentId ? 'sub-member' : 'member',
+            userName: req.user.name || 'User',
+            activityType: 'Settle Defaulter',
+            details: `Settled record for ${report.defaulter_name} at ₹${settledAmount}`,
+            parentId: userId
+        });
+
+        return res.status(200).json({ msg: "Record settled successfully", data: report });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "Error settling report" });
     }
 };
 

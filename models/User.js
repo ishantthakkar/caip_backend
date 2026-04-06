@@ -61,7 +61,7 @@ const userSchema = new mongoose.Schema({
     yearsInBusiness: { type: String, default: "" },
     cinNumber: { type: String, default: "" },
     pinCode: { type: String, default: "" },
-    businessAddress: { type: String, default: "" },
+    businessAddress: { type: String, required: true },
     industry: { type: String, default: "" },
     membershipExpiry: { type: String, default: "N/A" },
     membershipBenefits: { type: [String], default: [] },

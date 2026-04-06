@@ -11,16 +11,20 @@ exports.register = async (req, res) => {
     try {
         console.log("Registration process started for:", req.body.email || "unknown");
 
-        let { name, email, password, phone, state, district, subDistrict, city, gst, pan, role, companyName, businessAddress } = req.body;
+        let { name, email, password, phone, state, district, subDistrict, city, gst, pan, role, companyName, businessAddress, industry, companyEmail, alternateContactNumber, pinCode, otp, businessType, yearsInBusiness, cinNumber, companyPhoneNumber } = req.body;
 
         // Correct file mapping for upload.fields
         const businessDocuments = req.files && req.files.businessDocuments
             ? req.files.businessDocuments.map(file => file.filename)
             : [];
 
-        if (!name || !email || !phone || !state || !district || !subDistrict) {
+        if (!name || !email || !phone || !state || !district || !subDistrict || !industry || !otp || !businessAddress) {
             console.warn("Registration validation failed: Missing mandatory fields");
-            return res.status(400).json({ msg: "Required fields are missing: Name, Email, Phone, State, District, and Sub-District are mandatory." });
+            return res.status(400).json({ msg: "Required fields are missing: Name, Email, Phone, State, District, Sub-District, Industry, OTP, and Business Address are mandatory." });
+        }
+
+        if (otp !== "123456") {
+            return res.status(400).json({ msg: "Invalid OTP" });
         }
 
         const normalizedEmail = email.toLowerCase().trim();
@@ -60,6 +64,14 @@ exports.register = async (req, res) => {
             pan: pan || "",
             companyName: companyName || "",
             businessAddress: businessAddress || "",
+            industry: industry || "",
+            companyEmail: companyEmail || "",
+            alternateContactNumber: alternateContactNumber || "",
+            pinCode: pinCode || "",
+            businessType: businessType || "",
+            yearsInBusiness: yearsInBusiness || "",
+            cinNumber: cinNumber || "",
+            companyPhoneNumber: companyPhoneNumber || "",
             role: "2",
             status: "0",
             membership_status: "0",
@@ -67,12 +79,12 @@ exports.register = async (req, res) => {
         });
 
         console.log(`Success: Registered user ${memberId} - ${normalizedEmail}`);
-        
+
         // --- Email Notifications ---
         const memberData = { name: name.trim(), email: normalizedEmail, memberId, companyName, phone: trimmedPhone };
         emailService.sendRegistrationEmail(memberData); // Fire-and-forget for registration email
         emailService.notifyAdminOnRegistration(memberData); // Notify admin by email too
-        
+
         // Notify Admin (Internal Database Notification)
         try {
             await Notification.create({
@@ -106,6 +118,31 @@ exports.register = async (req, res) => {
     }
 };
 
+exports.sendRegisterOtp = async (req, res) => {
+    try {
+        const { email, phone } = req.body;
+
+        if (!email || !phone) {
+            return res.status(400).json({ msg: "Email and phone are required to send OTP." });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+        const trimmedPhone = phone.toString().trim();
+
+        const existingEmail = await User.findOne({ email: normalizedEmail });
+        if (existingEmail) return res.status(400).json({ msg: "Email already exists" });
+
+        const existingPhone = await User.findOne({ phone: trimmedPhone });
+        if (existingPhone) return res.status(400).json({ msg: "Phone number already exists" });
+
+        // Static OTP for now
+        return res.status(200).json({ msg: "OTP sent successfully", status: "otp_sent" });
+    } catch (err) {
+        console.error("sendRegisterOtp validation error:", err);
+        return res.status(500).json({ msg: "Internal server error" });
+    }
+};
+
 exports.login = async (req, res) => {
     try {
         const { phone } = req.body;
@@ -129,7 +166,7 @@ exports.login = async (req, res) => {
 
         if (!isSubMember) {
             if (user.status === "0" || user.status === 0) {
-                return res.status(403).json({ msg: "Approval pending. Please contact admin." });
+                return res.status(403).json({ msg: "Membership request is currently awaiting admin approval." });
             } else if (user.status === "2" || user.status === 2) {
                 const reason = user.rejectionReason ? ` Reason: ${user.rejectionReason}` : "";
                 return res.status(403).json({ msg: `Your account has been rejected.${reason}` });
