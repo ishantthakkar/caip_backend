@@ -182,12 +182,12 @@ exports.searchDefaulter = async (req, res) => {
         if (gst || pan || cin || aadhar) {
             const matchedAddresses = reports
                 .map(r => r.defaulter_address)
-                .filter(a => a && a.trim().length > 5); // Filter out empty or too short generic addresses
+                .filter(a => a && a.trim().length > 5);
 
             if (matchedAddresses.length > 0) {
                 const existingIds = reports.map(r => r._id.toString());
                 const relatedReports = await DefaulterReport.find({
-                    status: 1, // Only fetch approved related records
+                    status: 1, 
                     defaulter_address: { $in: matchedAddresses },
                     _id: { $nin: existingIds }
                 }).populate('user_id', 'name companyName');
@@ -195,6 +195,39 @@ exports.searchDefaulter = async (req, res) => {
                 if (relatedReports.length > 0) {
                     reports = [...reports, ...relatedReports].sort((a, b) => b.createdAt - a.createdAt);
                 }
+            }
+        }
+
+        // Fallback to external GST verification if no results found in local DB and GST was entered
+        let externalData = null;
+        if (reports.length === 0 && gst && defaultLoad !== 'true') {
+            try {
+                const gstApiUrl = `https://sheet.gstincheck.co.in/check/3294107c41d9191fd2857916d99d23c2/${gst}`;
+                const gstResponse = await fetch(gstApiUrl);
+                const gstData = await gstResponse.json();
+
+                if (gstData && gstData.flag && gstData.data) {
+                    const ext = gstData.data;
+                    externalData = {
+                        _id: `ext_${Date.now()}`,
+                        isExternal: true,
+                        defaulter_name: ext.lgnm || ext.tradeNam || 'N/A',
+                        gst_number: gst,
+                        pan_number: gst.substring(2, 12).toUpperCase(),
+                        defaulter_address: ext.pradr?.adr || 'N/A',
+                        state: ext.pradr?.addr?.stcd || 'N/A',
+                        district: ext.pradr?.addr?.dst || 'N/A',
+                        cities: ext.pradr?.addr?.st || 'N/A',
+                        city: ext.pradr?.addr?.loc || 'N/A',
+                        default_amount: 0,
+                        outstanding_amount: 0,
+                        payments: [],
+                        user_id: { name: 'GST Public Records', companyName: 'Verified' }
+                    };
+                    reports = [externalData];
+                }
+            } catch (e) {
+                console.error("Backend External GST verification failed:", e);
             }
         }
 
@@ -227,17 +260,8 @@ exports.searchDefaulter = async (req, res) => {
                 outstanding_amount: first.outstanding_amount,
                 date_of_default: first.date_of_default,
                 reason: first.reason_description,
-                court_complex_name: first.court_complex_name,
-                case_number: first.case_number,
-                case_type: first.case_type,
-                case_year: first.case_year,
-                case_status: first.case_status,
-                attachment_documents: first.attachment_documents,
-                payments: first.payments,
-                isSettled: first.isSettled,
-                settledAmount: first.settledAmount,
-                settledBy: first.settledBy,
-                settlementDate: first.settlementDate,
+                payment_records: first.payments,
+                isExternal: first.isExternal || false,
                 reported_by: first.user_id?.companyName || 'Verified Member'
             };
         }
@@ -295,7 +319,7 @@ exports.getMyReports = async (req, res) => {
 exports.getDashboardStats = async (req, res) => {
     try {
         const userId = req.user.parentId || req.user.id;
-        const { timeframe } = req.query;
+        const { timeframe, card } = req.query;
 
         let dateFilter = {};
         const now = new Date();
@@ -317,35 +341,44 @@ exports.getDashboardStats = async (req, res) => {
 
         const statsMatch = { user_id: new mongoose.Types.ObjectId(userId), ...dateFilter };
 
+        // Card-specific response logic
+        if (card) {
+            let cardData = { key: card, value: 0 };
+            if (card === 'total_reported') {
+                cardData.value = await DefaulterReport.countDocuments(statsMatch);
+            } else if (card === 'total_amount') {
+                const sum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: null, total: { $sum: "$default_amount" } } }]);
+                cardData.value = sum[0]?.total || 0;
+                cardData.isCurrency = true;
+            } else if (card === 'total_recovered') {
+                const sum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $unwind: "$payments" }, { $group: { _id: null, total: { $sum: "$payments.amount" } } }]);
+                cardData.value = sum[0]?.total || 0;
+                cardData.isCurrency = true;
+            } else if (card === 'search_trend') {
+                const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+                const trend = await SearchHistory.aggregate([
+                    { $match: { user_id: new mongoose.Types.ObjectId(req.user.id), createdAt: { $gte: startOfYear, ...dateFilter.createdAt ? { createdAt: dateFilter.createdAt } : {} } } },
+                    { $group: { _id: { month: { $month: "$createdAt" } }, count: { $sum: 1 } } },
+                    { $sort: { "_id.month": 1 } }
+                ]);
+                return res.status(200).json({ searchTrend: trend.map(item => ({ month: item._id.month, count: item.count })) });
+            } else if (card === 'industry_dist') {
+                const dist = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: "$industry", count: { $sum: 1 } } }]);
+                return res.status(200).json({ industryDist: dist.map(item => ({ name: item._id || 'Uncategorized', value: item.count })) });
+            }
+
+            return res.status(200).json({ summary: { [card === 'total_reported' ? 'totalReported' : card === 'total_amount' ? 'totalAmount' : 'totalRecovered']: cardData.value }, cardData });
+        }
+
+        // Default Load - All Data
         const myReports = await DefaulterReport.find({ user_id: userId }).sort({ createdAt: -1 }).limit(5);
         const totalReported = await DefaulterReport.countDocuments(statsMatch);
-
-        const aggregateSum = await DefaulterReport.aggregate([
-            { $match: statsMatch },
-            { $group: { _id: null, total: { $sum: "$default_amount" } } }
-        ]);
-
-        const recoveredSum = await DefaulterReport.aggregate([
-            { $match: statsMatch },
-            { $unwind: { path: "$payments", preserveNullAndEmptyArrays: false } },
-            { $group: { _id: null, total: { $sum: "$payments.amount" } } }
-        ]);
-
+        const aggregateSum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: null, total: { $sum: "$default_amount" } } }]);
+        const recoveredSum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $unwind: { path: "$payments", preserveNullAndEmptyArrays: false } }, { $group: { _id: null, total: { $sum: "$payments.amount" } } }]);
         const searchHistory = await SearchHistory.find({ user_id: new mongoose.Types.ObjectId(req.user.id) }).sort({ createdAt: -1 }).limit(5);
-
         const recentActivities = await ActivityLog.find({ parentId: new mongoose.Types.ObjectId(userId) }).sort({ createdAt: -1 }).limit(5);
-
-        const industryDist = await DefaulterReport.aggregate([
-            { $match: statsMatch },
-            { $group: { _id: "$industry", count: { $sum: 1 } } }
-        ]);
-
-        const stateInsights = await DefaulterReport.aggregate([
-            { $match: dateFilter }, // State insights usually for all reported, but can be filtered by time
-            { $group: { _id: "$state", count: { $sum: 1 }, totalAmount: { $sum: "$default_amount" } } },
-            { $sort: { count: -1 } }
-        ]);
-
+        const industryDist = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: "$industry", count: { $sum: 1 } } }]);
+        const stateInsights = await DefaulterReport.aggregate([{ $match: dateFilter }, { $group: { _id: "$state", count: { $sum: 1 }, totalAmount: { $sum: "$default_amount" } } }, { $sort: { count: -1 } }]);
         const startOfYear = new Date(new Date().getFullYear(), 0, 1);
         const searchTrend = await SearchHistory.aggregate([
             { $match: { user_id: new mongoose.Types.ObjectId(req.user.id), createdAt: { $gte: startOfYear } } },
@@ -359,6 +392,13 @@ exports.getDashboardStats = async (req, res) => {
                 totalAmount: aggregateSum[0]?.total || 0,
                 totalRecovered: recoveredSum[0]?.total || 0
             },
+            statsCards: [
+                { key: 'total_reported', title: 'Total Defaulters Reported', value: totalReported },
+                { key: 'total_amount', title: 'Total Default Amount', value: aggregateSum[0]?.total || 0, isCurrency: true },
+                { key: 'total_recovered', title: 'Total Amount Recovered', value: recoveredSum[0]?.total || 0, isCurrency: true },
+                { key: 'search_trend', title: 'Search Trend', value: searchTrend.reduce((sum, item) => sum + item.count, 0) },
+                { key: 'industry_dist', title: 'Industry Distribution', value: industryDist.length }
+            ],
             myReports,
             recentActivities,
             searchHistory,
@@ -462,7 +502,7 @@ exports.addPayment = async (req, res) => {
 
 exports.getAdminDashboardStats = async (req, res) => {
     try {
-        const { timeframe } = req.query;
+        const { timeframe, card } = req.query;
 
         let dateFilter = {};
         const now = new Date();
@@ -484,73 +524,55 @@ exports.getAdminDashboardStats = async (req, res) => {
 
         const statsMatch = { ...dateFilter };
 
-        const totalReported = await DefaulterReport.countDocuments(statsMatch);
+        // Card-specific response logic
+        if (card) {
+            let cardData = { key: card, value: 0 };
+            if (card === 'total_reported') {
+                cardData.value = await DefaulterReport.countDocuments(statsMatch);
+            } else if (card === 'total_amount') {
+                const sum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: null, total: { $sum: "$default_amount" } } }]);
+                cardData.value = sum[0]?.total || 0;
+                cardData.isCurrency = true;
+            } else if (card === 'total_recovered') {
+                const sum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $unwind: "$payments" }, { $group: { _id: null, total: { $sum: "$payments.amount" } } }]);
+                cardData.value = sum[0]?.total || 0;
+                cardData.isCurrency = true;
+            } else if (card === 'total_members') {
+                cardData.value = await User.countDocuments(statsMatch);
+            } else if (card === 'search_trend') {
+                const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+                const trend = await SearchHistory.aggregate([
+                    { $match: { createdAt: { $gte: startOfYear, ...dateFilter.createdAt ? { createdAt: dateFilter.createdAt } : {} } } },
+                    { $group: { _id: { month: { $month: "$createdAt" } }, count: { $sum: 1 } } },
+                    { $sort: { "_id.month": 1 } }
+                ]);
+                return res.status(200).json({ searchTrend: trend.map(item => ({ month: item._id.month, count: item.count })) });
+            } else if (card === 'industry_dist') {
+                const dist = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: "$industry", count: { $sum: 1 } } }]);
+                return res.status(200).json({ industryDist: dist.map(item => ({ name: item._id || 'Uncategorized', value: item.count })) });
+            }
 
-        const aggregateSum = await DefaulterReport.aggregate([
-            { $match: statsMatch },
-            { $group: { _id: null, total: { $sum: "$default_amount" } } }
-        ]);
+            return res.status(200).json({ summary: { [card === 'total_reported' ? 'totalReported' : card === 'total_amount' ? 'totalAmount' : card === 'total_recovered' ? 'totalRecovered' : 'totalMembers']: cardData.value }, cardData });
+        }
 
-        const recoveredSum = await DefaulterReport.aggregate([
-            { $match: statsMatch },
-            { $unwind: { path: "$payments", preserveNullAndEmptyArrays: false } },
-            { $group: { _id: null, total: { $sum: "$payments.amount" } } }
-        ]);
-
-        const industryDist = await DefaulterReport.aggregate([
-            { $match: statsMatch },
-            { $group: { _id: "$industry", count: { $sum: 1 } } }
-        ]);
-
-        const stateInsights = await DefaulterReport.aggregate([
-            { $match: dateFilter },
-            {
-                $group: {
-                    _id: "$state",
-                    count: { $sum: 1 },
-                    totalAmount: { $sum: "$default_amount" },
-                    totalRecovered: {
-                        $sum: {
-                            $subtract: ["$default_amount", { $ifNull: ["$outstanding_amount", "$default_amount"] }]
-                        }
-                    }
-                }
-            },
-            { $sort: { count: -1 } }
-        ]);
-
+        const industryDist = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: "$industry", count: { $sum: 1 } } }]);
+        const stateInsights = await DefaulterReport.aggregate([{
+            $group: {
+                _id: "$state",
+                count: { $sum: 1 },
+                totalAmount: { $sum: "$default_amount" },
+                totalRecovered: { $sum: { $subtract: ["$default_amount", { $ifNull: ["$outstanding_amount", "$default_amount"] }] } }
+            }
+        }]);
         const startOfYear = new Date(new Date().getFullYear(), 0, 1);
-        const searchTrend = await SearchHistory.aggregate([
-            { $match: { createdAt: { $gte: startOfYear } } },
-            { $group: { _id: { month: { $month: "$createdAt" } }, count: { $sum: 1 } } },
-            { $sort: { "_id.month": 1 } }
-        ]);
-
-        const recentReports = await DefaulterReport.find()
-            .populate('user_id', 'name companyName')
-            .sort({ createdAt: -1 })
-            .limit(5);
-
-        const searchHistory = await SearchHistory.find()
-            .populate('user_id', 'name companyName')
-            .sort({ createdAt: -1 })
-            .limit(5);
-
-        const totalMembers = await User.countDocuments(dateFilter);
-
-        const dbTransactions = await require("../models/Transaction").find()
-            .populate('user_id', 'name companyName')
-            .sort({ createdAt: -1 })
-            .limit(5);
-
-        const transactions = dbTransactions.map(tx => ({
-            id: tx._id,
-            txNo: tx.txNo,
-            member: tx.user_id?.name || 'Unknown',
-            companyName: tx.user_id?.companyName || 'N/A',
-            amount: tx.amount,
-            type: tx.type
-        }));
+        const searchTrend = await SearchHistory.aggregate([{ $match: { createdAt: { $gte: startOfYear } } }, { $group: { _id: { month: { $month: "$createdAt" } }, count: { $sum: 1 } } }, { $sort: { "_id.month": 1 } }]);
+        const recentReports = await DefaulterReport.find().populate('user_id', 'name companyName').sort({ createdAt: -1 }).limit(5);
+        const searchHistory = await SearchHistory.find().populate('user_id', 'name companyName').sort({ createdAt: -1 }).limit(5);
+        const totalMembers = await User.countDocuments();
+        const totalReported = await DefaulterReport.countDocuments(statsMatch);
+        const aggregateSum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $group: { _id: null, total: { $sum: "$default_amount" } } }]);
+        const recoveredSum = await DefaulterReport.aggregate([{ $match: statsMatch }, { $unwind: { path: "$payments", preserveNullAndEmptyArrays: false } }, { $group: { _id: null, total: { $sum: "$payments.amount" } } }]);
+        const transactions = (await require("../models/Transaction").find().populate('user_id', 'name companyName').sort({ createdAt: -1 }).limit(5)).map(tx => ({ id: tx._id, txNo: tx.txNo, member: tx.user_id?.name || 'Unknown', companyName: tx.user_id?.companyName || 'N/A', amount: tx.amount, type: tx.type }));
 
         return res.status(200).json({
             summary: {
@@ -559,13 +581,16 @@ exports.getAdminDashboardStats = async (req, res) => {
                 totalRecovered: recoveredSum[0]?.total || 0,
                 totalMembers
             },
+            statsCards: [
+                { key: 'total_reported', title: 'Total Defaulters Reported', value: totalReported },
+                { key: 'total_amount', title: 'Total Default Amount', value: aggregateSum[0]?.total || 0, isCurrency: true },
+                { key: 'total_recovered', title: 'Total Amount Recovered', value: recoveredSum[0]?.total || 0, isCurrency: true },
+                { key: 'total_members', title: 'Total Members Registered', value: totalMembers },
+                { key: 'search_trend', title: 'Search Trend', value: searchTrend.reduce((sum, item) => sum + item.count, 0) },
+                { key: 'industry_dist', title: 'Industry Distribution', value: industryDist.length }
+            ],
             industryDist: industryDist.map(item => ({ name: item._id || 'Uncategorized', value: item.count })),
-            stateInsights: stateInsights.map(item => ({
-                state: item._id || 'N/A',
-                count: item.count,
-                amount: item.totalAmount,
-                recovered: item.totalRecovered
-            })),
+            stateInsights: stateInsights.map(item => ({ state: item._id || 'N/A', count: item.count, amount: item.totalAmount, recovered: item.totalRecovered })),
             searchTrend: searchTrend.map(item => ({ month: item._id.month, count: item.count })),
             recentReports,
             searchHistory,
@@ -574,7 +599,7 @@ exports.getAdminDashboardStats = async (req, res) => {
 
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ msg: "Error fetching admin statistics" });
+        return res.status(500).json({ msg: "Error fetching dashboard statistics" });
     }
 };
 
@@ -726,9 +751,11 @@ exports.settleReport = async (req, res) => {
             type: 'settlement'
         });
 
-        // Set outstanding to 0 as it's settled
-        report.outstanding_amount = 0;
-
+        await report.save();
+        
+        // Use a fresh calculation for outstanding instead of forcing zero
+        const totalPaid = report.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+        report.outstanding_amount = Math.max(0, report.default_amount - totalPaid);
         await report.save();
 
         await logActivity(req, {
