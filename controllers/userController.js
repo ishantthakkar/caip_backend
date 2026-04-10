@@ -1,10 +1,21 @@
 const User = require("../models/User");
+const DefaulterReport = require("../models/DefaulterReport");
+const SearchHistory = require("../models/SearchHistory");
 const emailService = require("../utils/emailService");
+const logActivity = require("../middleware/activityLogger");
 
 exports.getUsers = async (req, res) => {
     try {
-        const users = await User.find({ role: 2 }).sort({ createdAt: -1 });
-        return res.status(200).json({ msg: "Users fetched successfully", data: users });
+        const users = await User.find({ role: 2 }).lean().sort({ createdAt: -1 });
+        
+        // Add defaulter count and search count for each user
+        const usersWithStats = await Promise.all(users.map(async (user) => {
+            const defaulterCount = await DefaulterReport.countDocuments({ user_id: user._id });
+            const searches = await SearchHistory.countDocuments({ user_id: user._id });
+            return { ...user, defaulterCount, searches };
+        }));
+
+        return res.status(200).json({ msg: "Users fetched successfully", data: usersWithStats });
     } catch (err) {
         console.error(err);
         return res.status(500).json({ msg: "Database error" });
@@ -28,6 +39,16 @@ exports.changeStatus = async (req, res) => {
             user.rejectionReason = ""; // Clear if approved
         }
         await user.save();
+
+        // Log Activity
+        await logActivity(req, {
+            userId: req.user.id, // The Admin performing the action
+            userRole: 'admin',
+            userName: req.user.name || 'Admin',
+            activityType: Number(status) === 1 ? 'Member Request Approved' : 'Member Request Rejected',
+            details: `${Number(status) === 1 ? 'Approved' : 'Rejected'} membership for ${user.companyName} (${user.memberId}).${Number(status) === 2 ? ` Reason: ${rejectionReason}` : ''}`,
+            parentId: null
+        });
 
         // Send Email Notification
         emailService.sendStatusUpdateEmail({ 

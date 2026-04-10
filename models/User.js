@@ -77,8 +77,10 @@ const userSchema = new mongoose.Schema({
     memberId: { type: String, default: "" },
     rejectionReason: { type: String, default: "" },
     profileImage: { type: String, default: null },
+    acceptedTermsId: { type: mongoose.Schema.Types.ObjectId, ref: 'TermsCondition', default: null },
     token: String
 }, { timestamps: true });
 
 const User = mongoose.model("user", userSchema);
+module.exports = User;
 module.exports = User;

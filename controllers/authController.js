@@ -4,6 +4,7 @@ const User = require("../models/User");
 const SubMember = require("../models/SubMember");
 const Notification = require("../models/Notification");
 const { JWT_SECRET } = require("../config/config");
+const TermsCondition = require("../models/TermsCondition");
 const logActivity = require("../middleware/activityLogger");
 const emailService = require("../utils/emailService");
 
@@ -49,6 +50,9 @@ exports.register = async (req, res) => {
         const count = await User.countDocuments();
         const memberId = `CAIP${String(count + 1).padStart(5, '0')}`;
 
+        // Find current published terms
+        const publishedTerms = await TermsCondition.findOne({ status: "Published" });
+
         // Create User
         const result = await User.create({
             name: name.trim(),
@@ -75,7 +79,8 @@ exports.register = async (req, res) => {
             role: "2",
             status: "0",
             membership_status: "0",
-            memberId: memberId
+            memberId: memberId,
+            acceptedTermsId: publishedTerms ? publishedTerms._id : null
         });
 
         console.log(`Success: Registered user ${memberId} - ${normalizedEmail}`);
@@ -272,9 +277,9 @@ exports.adminLogin = async (req, res) => {
             return res.status(400).json({ msg: "All fields are required" });
         }
 
-        const user = await User.findOne({ email, role: 1 });
+        const user = await User.findOne({ email, role: { $in: ["1", 1] } });
         if (!user) {
-            return res.status(400).json({ msg: "Invalid credentials" });
+            return res.status(400).json({ msg: "Invalid credentials (Admin check failed)" });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -283,9 +288,9 @@ exports.adminLogin = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user._id, email: user.email },
+            { id: user._id, email: user.email, role: user.role },
             JWT_SECRET,
-            { expiresIn: "1h" }
+            { expiresIn: "24h" }
         );
 
         user.token = token;
@@ -334,6 +339,19 @@ exports.verifyGst = async (req, res) => {
         }
     } catch (err) {
         console.error("GST verification error:", err);
+        return res.status(500).json({ msg: "Internal server error" });
+    }
+};
+exports.acceptTerms = async (req, res) => {
+    try {
+        const { userId, termsId } = req.body;
+        if (!userId || !termsId) {
+            return res.status(400).json({ msg: "User ID and Terms ID are required" });
+        }
+        await User.findByIdAndUpdate(userId, { acceptedTermsId: termsId });
+        return res.status(200).json({ msg: "Terms accepted successfully" });
+    } catch (err) {
+        console.error("Error accepting terms:", err);
         return res.status(500).json({ msg: "Internal server error" });
     }
 };

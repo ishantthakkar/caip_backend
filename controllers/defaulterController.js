@@ -123,9 +123,17 @@ exports.reportDefaulter = async (req, res) => {
 
 exports.searchDefaulter = async (req, res) => {
     try {
-        const { gst, pan, cin, aadhar, mobile, name, member_name, state, district, subDistrict, city, address, includePending, defaultLoad } = req.query;
-        let query = includePending === 'true' ? { status: { $ne: 2 } } : { status: 1 };
+        const {
+            gst, pan, cin, aadhar, mobile, name,
+            member_name, state, district, subDistrict,
+            city, address, includePending, defaultLoad
+        } = req.query;
 
+        let query = includePending === 'true'
+            ? { status: { $ne: 2 } }
+            : { status: 1 };
+
+        // 🔍 MEMBER NAME SEARCH
         if (member_name) {
             const matchedUsers = await User.find({
                 $or: [
@@ -133,7 +141,9 @@ exports.searchDefaulter = async (req, res) => {
                     { companyName: { $regex: member_name, $options: "i" } }
                 ]
             });
+
             const userIds = matchedUsers.map(u => u._id);
+
             if (userIds.length > 0) {
                 query.user_id = { $in: userIds };
             } else {
@@ -141,44 +151,60 @@ exports.searchDefaulter = async (req, res) => {
             }
         }
 
+        // 🔍 BASIC FILTERS
         if (gst) query.gst_number = { $regex: gst, $options: "i" };
         if (pan) query.pan_number = { $regex: pan, $options: "i" };
         if (cin) query.cin_number = { $regex: cin, $options: "i" };
         if (aadhar) query.aadhar_number = { $regex: aadhar, $options: "i" };
         if (mobile) query.mobile_number = { $regex: mobile, $options: "i" };
+
+        // 🔍 NAME MATCHING
         if (name) {
             const keywords = name.trim().split(/\s+/).filter(k =>
-                k.length > 2 && !['limited', 'private', 'pvt', 'ltd', 'company', 'corp'].includes(k.toLowerCase())
+                k.length > 2 &&
+                !['limited', 'private', 'pvt', 'ltd', 'company', 'corp']
+                    .includes(k.toLowerCase())
             );
+
             if (keywords.length > 0) {
                 query.defaulter_name = {
-                    $regex: `(${[name, ...keywords].map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+                    $regex: `(${[name, ...keywords]
+                        .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                        .join('|')})`,
                     $options: "i"
                 };
             } else {
                 query.defaulter_name = { $regex: name, $options: "i" };
             }
         }
+
+        // 🔍 ADDRESS MATCHING
         if (address) {
             const addrKeywords = address.trim().split(/\s+/).filter(k => k.length > 3);
+
             if (addrKeywords.length > 0) {
                 query.defaulter_address = {
-                    $regex: `(${[address, ...addrKeywords].map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+                    $regex: `(${[address, ...addrKeywords]
+                        .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                        .join('|')})`,
                     $options: "i"
                 };
             } else {
                 query.defaulter_address = { $regex: address, $options: "i" };
             }
         }
+
         if (state) query.state = state;
         if (district) query.district = district;
         if (subDistrict) query.cities = subDistrict;
         if (city) query.city = city;
-        let reportsQuery = DefaulterReport.find(query).populate('user_id', 'name companyName').sort({ createdAt: -1 });
 
-        let reports = await reportsQuery;
+        // 🔍 MAIN DB QUERY
+        let reports = await DefaulterReport.find(query)
+            .populate('user_id', 'name companyName')
+            .sort({ createdAt: -1 });
 
-        // Enhanced: if identifier search finds a record, also fetch other records sharing the same address
+        // 🔁 ADDRESS-BASED EXPANSION
         if (gst || pan || cin || aadhar) {
             const matchedAddresses = reports
                 .map(r => r.defaulter_address)
@@ -186,20 +212,21 @@ exports.searchDefaulter = async (req, res) => {
 
             if (matchedAddresses.length > 0) {
                 const existingIds = reports.map(r => r._id.toString());
+
                 const relatedReports = await DefaulterReport.find({
-                    status: 1, 
+                    status: 1,
                     defaulter_address: { $in: matchedAddresses },
                     _id: { $nin: existingIds }
                 }).populate('user_id', 'name companyName');
 
                 if (relatedReports.length > 0) {
-                    reports = [...reports, ...relatedReports].sort((a, b) => b.createdAt - a.createdAt);
+                    reports = [...reports, ...relatedReports]
+                        .sort((a, b) => b.createdAt - a.createdAt);
                 }
             }
         }
 
-        // Fallback to external GST verification if no results found in local DB and GST was entered
-        let externalData = null;
+        // 🌐 EXTERNAL GST FALLBACK → DB REQUERY
         if (reports.length === 0 && gst && defaultLoad !== 'true') {
             try {
                 const gstApiUrl = `https://sheet.gstincheck.co.in/check/3294107c41d9191fd2857916d99d23c2/${gst}`;
@@ -208,39 +235,138 @@ exports.searchDefaulter = async (req, res) => {
 
                 if (gstData && gstData.flag && gstData.data) {
                     const ext = gstData.data;
-                    externalData = {
-                        _id: `ext_${Date.now()}`,
-                        isExternal: true,
-                        defaulter_name: ext.lgnm || ext.tradeNam || 'N/A',
-                        gst_number: gst,
-                        pan_number: gst.substring(2, 12).toUpperCase(),
-                        defaulter_address: ext.pradr?.adr || 'N/A',
-                        state: ext.pradr?.addr?.stcd || 'N/A',
-                        district: ext.pradr?.addr?.dst || 'N/A',
-                        cities: ext.pradr?.addr?.st || 'N/A',
-                        city: ext.pradr?.addr?.loc || 'N/A',
-                        default_amount: 0,
-                        outstanding_amount: 0,
-                        payments: [],
-                        user_id: { name: 'GST Public Records', companyName: 'Verified' }
+                    const extName = ext.tradeNam;
+                    const extAddress = ext.pradr?.adr;
+
+                    let orConditions = [];
+
+                    // 🔍 NAME MATCHING
+                    if (extName) {
+                        const words = extName
+                            .trim()
+                            .split(/\s+/)
+                            .filter(w => w.length > 2 && !['limited', 'private', 'pvt', 'ltd', 'company', 'corp'].includes(w.toLowerCase()));
+
+                        if (words.length > 0) {
+                            orConditions.push({
+                                defaulter_name: { $regex: words.join('|'), $options: 'i' }
+                            });
+                        } else {
+                            orConditions.push({ defaulter_name: { $regex: extName, $options: 'i' } });
+                        }
+                    }
+
+                    // 🔍 ADDRESS MATCHING
+                    if (extAddress) {
+                        const addrKeywords = extAddress.trim().split(/\s+/).filter(k => k.length > 3);
+
+                        if (addrKeywords.length > 0) {
+                            orConditions.push({
+                                defaulter_address: {
+                                    $regex: `(${[extAddress, ...addrKeywords].map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+                                    $options: "i"
+                                }
+                            });
+                        } else {
+                            orConditions.push({ defaulter_address: { $regex: extAddress, $options: "i" } });
+                        }
+                    }
+
+                    // 🔁 FINAL DB SEARCH using $or
+                    const secondaryQuery = {
+                        status: 1,
+                        $or: orConditions
                     };
-                    reports = [externalData];
+
+
+                    const relatedReports = await DefaulterReport.find(secondaryQuery)
+                        .populate('user_id', 'name companyName')
+                        .sort({ createdAt: -1 });
+
+                    reports = relatedReports.length > 0 ? relatedReports : [];
+                    console.log(relatedReports);
                 }
+
             } catch (e) {
-                console.error("Backend External GST verification failed:", e);
+                console.error("External GST verification failed:", e);
             }
         }
+        // if (reports.length === 0 && gst) {
+        //     try {
+        //         // 🔹 Static GST response
+        //         const gstData = {
+        //             flag: true,
+        //             data: {
+        //                 tradeNam: "METIZSOFT SOLUTIONS PRIVATE LIMITED",
+        //                 pradr: { adr: "8TH FLOOR, A-802, GANESH PLAZA, NR. NAVRANGPURA BUS STOP, NAVRANGPURA, AHMEDABAD, Ahmedabad, Gujarat, 380009" }
+        //             }
+        //         };
 
-        let historyFilters = { gst, pan, cin, aadhar, mobile, name, member_name, state, district, subDistrict, city, address };
-        // Clean undefined/empty filters
-        Object.keys(historyFilters).forEach(key => {
-            if (historyFilters[key] === undefined || historyFilters[key] === '' || historyFilters[key] === null) {
-                delete historyFilters[key];
-            }
-        });
+        //         if (gstData && gstData.flag && gstData.data) {
+        //             const ext = gstData.data;
+        //             const extName = ext.tradeNam;
+        //             const extAddress = ext.pradr?.adr;
+
+        //             let orConditions = [];
+
+        //             // 🔍 NAME MATCHING
+        //             if (extName) {
+        //                 const words = extName
+        //                     .trim()
+        //                     .split(/\s+/)
+        //                     .filter(w => w.length > 2 && !['limited', 'private', 'pvt', 'ltd', 'company', 'corp'].includes(w.toLowerCase()));
+
+        //                 if (words.length > 0) {
+        //                     orConditions.push({
+        //                         defaulter_name: { $regex: words.join('|'), $options: 'i' }
+        //                     });
+        //                 } else {
+        //                     orConditions.push({ defaulter_name: { $regex: extName, $options: 'i' } });
+        //                 }
+        //             }
+
+        //             // 🔍 ADDRESS MATCHING
+        //             if (extAddress) {
+        //                 const addrKeywords = extAddress.trim().split(/\s+/).filter(k => k.length > 3);
+
+        //                 if (addrKeywords.length > 0) {
+        //                     orConditions.push({
+        //                         defaulter_address: {
+        //                             $regex: `(${[extAddress, ...addrKeywords].map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+        //                             $options: "i"
+        //                         }
+        //                     });
+        //                 } else {
+        //                     orConditions.push({ defaulter_address: { $regex: extAddress, $options: "i" } });
+        //                 }
+        //             }
+
+        //             // 🔁 FINAL DB SEARCH using $or
+        //             const secondaryQuery = {
+        //                 status: 1,
+        //                 $or: orConditions
+        //             };
+
+
+        //             const relatedReports = await DefaulterReport.find(secondaryQuery)
+        //                 .populate('user_id', 'name companyName')
+        //                 .sort({ createdAt: -1 });
+
+        //             reports = relatedReports.length > 0 ? relatedReports : [];
+        //             console.log(relatedReports);
+        //         }
+
+        //     } catch (e) {
+        //         console.error("External GST verification failed:", e);
+        //     }
+        // }
+
+        // 📊 RESULT SUMMARY
         let resultData = null;
+
         if (reports.length > 0) {
             const first = reports[0];
+            const userData = await User.findById(first.user_id);
             resultData = {
                 name: first.defaulter_name,
                 gst: first.gst_number,
@@ -252,51 +378,54 @@ exports.searchDefaulter = async (req, res) => {
                 subDistrict: first.cities,
                 city: first.city,
                 address: first.defaulter_address,
-                email: first.email_id,
                 mobile: first.mobile_number,
-                industry: first.industry,
-                financial_year: first.financial_year,
                 default_amount: first.default_amount,
                 outstanding_amount: first.outstanding_amount,
-                date_of_default: first.date_of_default,
-                reason: first.reason_description,
-                payment_records: first.payments,
                 isExternal: first.isExternal || false,
-                reported_by: first.user_id?.companyName || 'Verified Member'
+                reported_by: userData?.companyName,
+                reported_by_person: userData?.name
             };
         }
-
-        // Only create history and notifications if it's an actual user search (not a default page load)
+        // 📝 HISTORY + NOTIFICATION
         if (defaultLoad !== 'true') {
-            const searchRecord = await SearchHistory.create({
-                user_id: req.user.id, // History is still personal
+            const historyFilters = {
+                gst, pan, cin, aadhar, mobile, name,
+                member_name, state, district,
+                subDistrict, city, address
+            };
+
+            Object.keys(historyFilters).forEach(key => {
+                if (!historyFilters[key]) delete historyFilters[key];
+            });
+
+            await SearchHistory.create({
+                user_id: req.user.id,
                 filters: historyFilters,
-                resultData: resultData,
+                resultData,
                 resultCount: reports.length
             });
 
-            // Notify user about search result (only if they found something)
             if (reports.length > 0) {
                 await Notification.create({
                     member_id: req.user.id,
                     message_title: "Search Results Found",
-                    message_content: `Your search returned ${reports.length} matching defaulter(s) in the database.`,
+                    message_content: `Your search returned ${reports.length} matching defaulter(s).`,
                     sending_time: new Date().toISOString()
                 });
             }
 
-            // Log clinical activity
             await logActivity(req, {
                 userId: req.user.id,
                 userRole: req.user.parentId ? 'sub-member' : 'member',
                 userName: req.user.name || 'Unknown',
                 activityType: 'Defaulter Search',
-                details: `Searched for: ${gst || pan || cin || aadhar || name || address}. Records found: ${reports.length}`,
+                details: `Search: ${gst || pan || cin || aadhar || name || address}, Found: ${reports.length}`,
                 parentId: req.user.parentId || req.user.id
             });
         }
 
         return res.status(200).json({ data: reports });
+
     } catch (err) {
         console.error(err);
         return res.status(500).json({ msg: "Error searching defaulters" });
@@ -738,12 +867,12 @@ exports.settleReport = async (req, res) => {
         if (!report) return res.status(404).json({ msg: "Report not found or unauthorized" });
 
         const { settledAmount, settledBy, settlementDate } = req.body;
-        
+
         report.isSettled = true;
         report.settledAmount = Number(settledAmount);
         report.settledBy = settledBy;
         report.settlementDate = new Date(settlementDate);
-        
+
         // Add a settlement payment to the payments array
         report.payments.push({
             amount: Number(settledAmount),
@@ -752,7 +881,7 @@ exports.settleReport = async (req, res) => {
         });
 
         await report.save();
-        
+
         // Use a fresh calculation for outstanding instead of forcing zero
         const totalPaid = report.payments.reduce((sum, p) => sum + Number(p.amount), 0);
         report.outstanding_amount = Math.max(0, report.default_amount - totalPaid);

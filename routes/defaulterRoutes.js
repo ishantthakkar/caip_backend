@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const defaulterController = require("../controllers/defaulterController");
-const verifyToken = require("../middleware/auth");
+const { verifyToken, verifyAdmin } = require("../middleware/auth");
 const upload = require("../middleware/upload");
 
 router.get("/defaulter/check-duplicate", verifyToken, defaulterController.checkDuplicates);
@@ -18,10 +18,10 @@ router.get("/member/activity-logs", verifyToken, defaulterController.getActivity
 router.post("/auth/log-logout", verifyToken, defaulterController.logLogout);
 
 // Admin routes for defaulters
-router.get("/admin/dashboard-stats", defaulterController.getAdminDashboardStats);
-router.get("/admin/defaulters", defaulterController.adminGetAllDefaulters);
-router.get("/admin/member-defaulters/:userId", defaulterController.adminGetDefaultersByMember);
-router.post("/admin/defaulter/change-status", defaulterController.adminChangeStatus);
-router.get("/admin/activity-logs", defaulterController.adminGetActivityLogs);
+router.get("/admin/dashboard-stats", verifyToken, verifyAdmin, defaulterController.getAdminDashboardStats);
+router.get("/admin/defaulters", verifyToken, verifyAdmin, defaulterController.adminGetAllDefaulters);
+router.get("/admin/member-defaulters/:userId", verifyToken, verifyAdmin, defaulterController.adminGetDefaultersByMember);
+router.post("/admin/defaulter/change-status", verifyToken, verifyAdmin, defaulterController.adminChangeStatus);
+router.get("/admin/activity-logs", verifyToken, verifyAdmin, defaulterController.adminGetActivityLogs);
 
 module.exports = router;

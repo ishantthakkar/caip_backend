@@ -30,6 +30,7 @@ const defaulterRoutes = require("./routes/defaulterRoutes");
 const locationRoutes = require("./routes/locationRoutes");
 const subMemberRoutes = require("./routes/subMemberRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const termsRoutes = require("./routes/termsRoutes");
 
 // Use Routes
 app.use("/api", authRoutes);
@@ -38,6 +39,7 @@ app.use("/api", membershipRoutes);
 app.use("/api", defaulterRoutes);
 app.use("/api", locationRoutes);
 app.use("/api", notificationRoutes);
+app.use("/api", termsRoutes);
 app.use("/api/sub-members", subMemberRoutes);
 
 // Global Error Handler - Convert HTML errors to JSON for easier debugging

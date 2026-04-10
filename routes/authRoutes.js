@@ -9,5 +9,6 @@ router.post("/login", authController.login);
 router.post("/verify-otp", authController.verifyOtp);
 router.post("/admin-login", authController.adminLogin);
 router.get("/verify-gst/:gst", authController.verifyGst);
+router.post("/accept-terms", authController.acceptTerms);
 
 module.exports = router;
