@@ -129,8 +129,6 @@ exports.toggleActiveStatus = async (req, res) => {
             subMember.isActive = false;
             action = "Deactivated";
         } else {
-            // Deactivate all other sub-members for this parent
-            await SubMember.updateMany({ parentId }, { isActive: false });
             subMember.isActive = true;
             action = "Activated";
         }
