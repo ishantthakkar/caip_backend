@@ -19,9 +19,9 @@ exports.register = async (req, res) => {
             ? req.files.businessDocuments.map(file => file.filename)
             : [];
 
-        if (!name || !email || !phone || !state || !district || !subDistrict || !industry || !otp || !businessAddress) {
+        if (!name || !email || !phone || !state || !district || !subDistrict || !industry || !otp || !businessAddress || !pinCode) {
             console.warn("Registration validation failed: Missing mandatory fields");
-            return res.status(400).json({ msg: "Required fields are missing: Name, Email, Phone, State, District, Sub-District, Industry, OTP, and Business Address are mandatory." });
+            return res.status(400).json({ msg: "Required fields are missing: Name, Email, Phone, State, District, Sub-District, Industry, OTP, Pincode, and Business Address are mandatory." });
         }
 
         if (otp !== "123456") {
