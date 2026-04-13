@@ -328,7 +328,7 @@ exports.verifyGst = async (req, res) => {
             return res.status(400).json({ msg: "GST number is required" });
         }
 
-        const apiUrl = `https://sheet.gstincheck.co.in/check/3294107c41d9191fd2857916d99d23c2/${gst}`;
+        const apiUrl = `https://sheet.gstincheck.co.in/check/ecf57ae07da1c5e3ecbbae1048670ec5/${gst}`;
         const response = await fetch(apiUrl);
         const data = await response.json();
 
