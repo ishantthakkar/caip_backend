@@ -82,3 +82,17 @@ exports.getCities = (req, res) => {
         return res.status(500).json({ msg: "Error fetching cities" });
     }
 };
+
+exports.getAllLocations = (req, res) => {
+    try {
+        const locationsPath = path.join(__dirname, "../locations.json");
+        if (!fs.existsSync(locationsPath)) {
+            return res.status(404).json({ msg: "Locations data not found" });
+        }
+        const data = JSON.parse(fs.readFileSync(locationsPath, "utf-8"));
+        return res.status(200).json(data);
+    } catch (err) {
+        console.error("Error reading locations.json:", err);
+        return res.status(500).json({ msg: "Cannot fetch full location hierarchy" });
+    }
+};

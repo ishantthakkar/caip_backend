@@ -6,5 +6,6 @@ router.get("/locations", locationController.getLocations);
 router.get("/districts", locationController.getDistricts);
 router.get("/sub-districts", locationController.getSubDistricts);
 router.get("/cities", locationController.getCities);
+router.get("/all-locations", locationController.getAllLocations);
 
 module.exports = router;
