@@ -8,9 +8,9 @@ router.get("/defaulter/check-duplicate", verifyToken, defaulterController.checkD
 router.post("/defaulter/report", verifyToken, upload.array("attachment_documents", 5), defaulterController.reportDefaulter);
 router.get("/defaulter/search", verifyToken, defaulterController.searchDefaulter);
 router.get("/defaulter/my-reports", verifyToken, defaulterController.getMyReports);
+router.get("/defaulter/search-history", verifyToken, defaulterController.getSearchHistory);
 router.get("/defaulter/:id", verifyToken, defaulterController.getDefaulterById);
 router.get("/member/dashboard-stats", verifyToken, defaulterController.getDashboardStats);
-router.get("/defaulter/search-history", verifyToken, defaulterController.getSearchHistory);
 router.put("/defaulter/update/:id", verifyToken, upload.array("attachment_documents", 5), defaulterController.updateReport);
 router.post("/defaulter/add-payment/:id", verifyToken, defaulterController.addPayment);
 router.post("/defaulter/settle/:id", verifyToken, defaulterController.settleReport);
