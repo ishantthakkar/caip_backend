@@ -3,10 +3,13 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const SubMember = require("../models/SubMember");
 const Notification = require("../models/Notification");
-const { JWT_SECRET } = require("../config/config");
+const { JWT_SECRET, JWT_REFRESH_SECRET } = require("../config/config");
 const TermsCondition = require("../models/TermsCondition");
 const logActivity = require("../middleware/activityLogger");
 const emailService = require("../utils/emailService");
+
+const createAccessToken = (payload) => jwt.sign(payload, JWT_SECRET, { expiresIn: "8h" });
+const createRefreshToken = (payload) => jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "30d" });
 
 exports.register = async (req, res) => {
     try {
@@ -230,13 +233,18 @@ exports.verifyOtp = async (req, res) => {
             }
         }
 
-        const token = jwt.sign(
-            { id: user._id, email: user.email, name: isSubMember ? user.firstName : user.name, parentId: isSubMember ? user.parentId : null },
-            JWT_SECRET,
-            { expiresIn: "24h" }
-        );
+        const payload = {
+            id: user._id,
+            email: user.email,
+            name: isSubMember ? user.firstName : user.name,
+            parentId: isSubMember ? user.parentId : null
+        };
 
-        user.token = token;
+        const accessToken = createAccessToken(payload);
+        const refreshToken = createRefreshToken(payload);
+
+        user.token = accessToken;
+        user.refreshToken = refreshToken;
         await user.save();
 
         await logActivity(req, {
@@ -252,7 +260,9 @@ exports.verifyOtp = async (req, res) => {
             const parent = await User.findById(user.parentId);
             return res.status(200).json({
                 msg: "Login successful (Sub-Member)",
-                token: token,
+                access_token: accessToken,
+                refresh_token: refreshToken,
+                token: accessToken,
                 user: parent,
                 subMember: user
             });
@@ -260,10 +270,64 @@ exports.verifyOtp = async (req, res) => {
 
         return res.status(200).json({
             msg: "Login successful",
-            token: token,
+            access_token: accessToken,
+            refresh_token: refreshToken,
             user: user
         });
 
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "Internal server error" });
+    }
+};
+
+exports.refreshToken = async (req, res) => {
+    try {
+        const { refresh_token } = req.body;
+        if (!refresh_token) {
+            return res.status(400).json({ msg: "Refresh token is required" });
+        }
+
+        let payload;
+        try {
+            payload = jwt.verify(refresh_token, JWT_REFRESH_SECRET);
+        } catch (error) {
+            if (error.name === 'TokenExpiredError') {
+                return res.status(401).json({ msg: "Refresh token expired" });
+            }
+            return res.status(401).json({ msg: "Invalid refresh token" });
+        }
+
+        let user = await User.findById(payload.id);
+        let isSubMember = false;
+
+        if (!user) {
+            user = await SubMember.findById(payload.id);
+            if (!user) {
+                return res.status(404).json({ msg: "User not found" });
+            }
+            isSubMember = true;
+        }
+
+        if (!user.refreshToken || user.refreshToken !== refresh_token) {
+            return res.status(403).json({ msg: "Refresh token is not valid" });
+        }
+
+        const accessPayload = {
+            id: user._id,
+            email: user.email,
+            name: isSubMember ? user.firstName : user.name,
+            parentId: isSubMember ? user.parentId : null
+        };
+
+        const accessToken = createAccessToken(accessPayload);
+        user.token = accessToken;
+        await user.save();
+
+        return res.status(200).json({
+            msg: "Access token refreshed successfully",
+            access_token: accessToken
+        });
     } catch (err) {
         console.error(err);
         return res.status(500).json({ msg: "Internal server error" });

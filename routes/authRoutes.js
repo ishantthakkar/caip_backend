@@ -7,6 +7,7 @@ router.post("/send-register-otp", authController.sendRegisterOtp);
 router.post("/register", upload.fields([{ name: 'businessDocuments', maxCount: 5 }]), authController.register);
 router.post("/login", authController.login);
 router.post("/verify-otp", authController.verifyOtp);
+router.post("/refresh-token", authController.refreshToken);
 router.post("/admin-login", authController.adminLogin);
 router.get("/verify-gst/:gst", authController.verifyGst);
 router.post("/accept-terms", authController.acceptTerms);

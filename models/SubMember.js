@@ -22,6 +22,14 @@ const subMemberSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    token: {
+        type: String,
+        default: null,
+    },
+    refreshToken: {
+        type: String,
+        default: null,
+    },
 }, { timestamps: true });
 
 const SubMember = mongoose.model("submember", subMemberSchema);

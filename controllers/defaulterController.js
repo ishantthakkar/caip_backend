@@ -903,6 +903,40 @@ exports.settleReport = async (req, res) => {
     }
 };
 
+exports.getDefaulterById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!id) {
+            return res.status(400).json({ msg: "Defaulter ID is required" });
+        }
+
+        const defaulter = await DefaulterReport.findById(id)
+            .populate('user_id', 'name companyName email memberId phone')
+            .populate('reported_by_id', 'name email phone');
+
+        if (!defaulter) {
+            return res.status(404).json({ msg: "Defaulter not found" });
+        }
+
+        // Check if user has access to this defaulter
+        // Admin can see all, members can see their own reports
+        const isAdmin = req.user.role == 1;
+        const isOwner = defaulter.user_id._id.toString() === (req.user.parentId || req.user.id);
+
+        if (!isAdmin && !isOwner) {
+            return res.status(403).json({ msg: "Access denied" });
+        }
+
+        return res.status(200).json({
+            msg: "Defaulter details fetched successfully",
+            data: defaulter
+        });
+    } catch (err) {
+        console.error("Error fetching defaulter details:", err);
+        return res.status(500).json({ msg: "Error fetching defaulter details" });
+    }
+};
+
 exports.logLogout = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ msg: "Unauthorized" });

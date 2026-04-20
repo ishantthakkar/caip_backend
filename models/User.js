@@ -78,7 +78,7 @@ const userSchema = new mongoose.Schema({
     rejectionReason: { type: String, default: "" },
     profileImage: { type: String, default: null },
     acceptedTermsId: { type: mongoose.Schema.Types.ObjectId, ref: 'TermsCondition', default: null },
-    token: String
+    refreshToken: { type: String, default: null }
 }, { timestamps: true });
 
 const User = mongoose.model("user", userSchema);
