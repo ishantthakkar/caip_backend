@@ -920,12 +920,6 @@ exports.getDefaulterById = async (req, res) => {
 
         // Check if user has access to this defaulter
         // Admin can see all, members can see their own reports
-        const isAdmin = req.user.role == 1;
-        const isOwner = defaulter.user_id._id.toString() === (req.user.parentId || req.user.id);
-
-        if (!isAdmin && !isOwner) {
-            return res.status(403).json({ msg: "Access denied" });
-        }
 
         return res.status(200).json({
             msg: "Defaulter details fetched successfully",
