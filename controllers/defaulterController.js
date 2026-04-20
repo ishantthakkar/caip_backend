@@ -363,29 +363,7 @@ exports.searchDefaulter = async (req, res) => {
 
         // 📊 RESULT SUMMARY
         let resultData = null;
-
-        if (reports.length > 0) {
-            const first = reports[0];
-            const userData = await User.findById(first.user_id);
-            resultData = {
-                name: first.defaulter_name,
-                gst: first.gst_number,
-                pan: first.pan_number,
-                cin: first.cin_number,
-                aadhar: first.aadhar_number,
-                state: first.state,
-                district: first.district,
-                subDistrict: first.cities,
-                city: first.city,
-                address: first.defaulter_address,
-                mobile: first.mobile_number,
-                default_amount: first.default_amount,
-                outstanding_amount: first.outstanding_amount,
-                isExternal: first.isExternal || false,
-                reported_by: userData?.companyName,
-                reported_by_person: userData?.name
-            };
-        }
+        const defaulterId = reports.length > 0 ? reports[0]._id : null;
         // 📝 HISTORY + NOTIFICATION
         if (defaultLoad !== 'true') {
             const historyFilters = {
@@ -402,7 +380,8 @@ exports.searchDefaulter = async (req, res) => {
                 user_id: req.user.id,
                 filters: historyFilters,
                 resultData,
-                resultCount: reports.length
+                resultCount: reports.length,
+                defaulter_id: defaulterId
             });
 
             if (reports.length > 0) {
@@ -545,6 +524,10 @@ exports.getSearchHistory = async (req, res) => {
     try {
         const history = await SearchHistory.find({ user_id: new mongoose.Types.ObjectId(req.user.id) })
             .populate('user_id', 'name')
+            .populate({
+                path: 'defaulter_id',
+                populate: { path: 'user_id', select: 'name companyName' }
+            })
             .sort({ createdAt: -1 })
             .limit(50);
         return res.status(200).json({ data: history });
