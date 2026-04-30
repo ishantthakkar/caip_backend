@@ -9,6 +9,9 @@ router.post("/defaulter/report", verifyToken, upload.array("attachment_documents
 router.get("/defaulter/search", verifyToken, defaulterController.searchDefaulter);
 router.get("/defaulter/my-reports", verifyToken, defaulterController.getMyReports);
 router.get("/defaulter/search-history", verifyToken, defaulterController.getSearchHistory);
+router.post("/defaulter/save-report", verifyToken, upload.single("report"), defaulterController.saveDownloadedReport);
+router.post("/defaulter/generate-report", verifyToken, defaulterController.generateSearchReport);
+router.post("/defaulter/get-report-url", verifyToken, defaulterController.getReportUrl);
 router.get("/defaulter/:id", verifyToken, defaulterController.getDefaulterById);
 router.get("/member/dashboard-stats", verifyToken, defaulterController.getDashboardStats);
 router.put("/defaulter/update/:id", verifyToken, upload.array("attachment_documents", 5), defaulterController.updateReport);
