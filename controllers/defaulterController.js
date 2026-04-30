@@ -334,7 +334,8 @@ exports.getMyReports = async (req, res) => {
 exports.getDashboardStats = async (req, res) => {
     try {
         const userId = req.user.parentId || req.user.id;
-        const { timeframe, card } = req.query;
+        const timeframe = (req.query.timeframe || "").toLowerCase();
+        const card = req.query.card;
 
         let dateFilter = {};
         const now = new Date();
@@ -345,10 +346,10 @@ exports.getDashboardStats = async (req, res) => {
         } else if (timeframe === 'last7days') {
             const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
             dateFilter = { createdAt: { $gte: sevenDaysAgo } };
-        } else if (timeframe === 'thisMonth') {
+        } else if (timeframe === 'thismonth') {
             const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
             dateFilter = { createdAt: { $gte: startOfMonth } };
-        } else if (timeframe === 'lastMonth') {
+        } else if (timeframe === 'lastmonth') {
             const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
             dateFilter = { createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth } };
@@ -370,9 +371,11 @@ exports.getDashboardStats = async (req, res) => {
                 cardData.value = sum[0]?.total || 0;
                 cardData.isCurrency = true;
             } else if (card === 'search_trend') {
-                const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+                // Combine dateFilter with userId for trend aggregation
+                const trendMatch = { user_id: new mongoose.Types.ObjectId(req.user.id), ...dateFilter };
+                
                 const trend = await SearchHistory.aggregate([
-                    { $match: { user_id: new mongoose.Types.ObjectId(req.user.id), createdAt: { $gte: startOfYear, ...dateFilter.createdAt ? { createdAt: dateFilter.createdAt } : {} } } },
+                    { $match: trendMatch },
                     { $group: { _id: { month: { $month: "$createdAt" } }, count: { $sum: 1 } } },
                     { $sort: { "_id.month": 1 } }
                 ]);
