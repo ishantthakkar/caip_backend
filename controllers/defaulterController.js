@@ -299,6 +299,7 @@ const performDefaulterSearch = async (filters, user) => {
         const mockReq = { 
             headers: {}, 
             ip: '::1', 
+            socket: { remoteAddress: '::1' },
             user: user,
             protocol: 'http',
             get: (h) => ''
@@ -778,7 +779,14 @@ exports.generateSearchReport = async (req, res) => {
         });
         
         const fileName = `Search_Report_${Date.now()}.pdf`;
-        const filePath = path.join(__dirname, "../uploads", fileName);
+        const uploadsDir = path.join(__dirname, "../uploads");
+        
+        // Ensure uploads directory exists
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        const filePath = path.join(uploadsDir, fileName);
         const writeStream = fs.createWriteStream(filePath);
         doc.pipe(writeStream);
 
