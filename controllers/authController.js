@@ -15,7 +15,7 @@ exports.register = async (req, res) => {
     try {
         console.log("Registration process started for:", req.body.email || "unknown");
 
-        let { name, email, password, phone, state, district, subDistrict, city, gst, pan, role, companyName, businessAddress, industry, companyEmail, alternateContactNumber, pinCode, otp, businessType, yearsInBusiness, cinNumber, companyPhoneNumber } = req.body;
+        let { name, email, password, phone, state, district, subDistrict, city, gst, pan, aadhar, role, companyName, businessAddress, industry, companyEmail, alternateContactNumber, pinCode, otp, businessType, yearsInBusiness, cinNumber, companyPhoneNumber } = req.body;
 
         // Correct file mapping for upload.fields
         const businessDocuments = req.files && req.files.businessDocuments
@@ -69,6 +69,7 @@ exports.register = async (req, res) => {
             businessDocuments,
             gst: gst || "",
             pan: pan || "",
+            aadhar: aadhar || "",
             companyName: companyName || "",
             businessAddress: businessAddress || "",
             industry: industry || "",

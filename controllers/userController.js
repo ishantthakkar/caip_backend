@@ -136,7 +136,7 @@ exports.updateProfile = async (req, res) => {
         if (!user) return res.status(404).json({ msg: "User not found" });
 
         const fieldsToUpdate = [
-            'name', 'businessType', 'gst', 'yearsInBusiness', 'cinNumber', 'pan',
+            'name', 'businessType', 'gst', 'yearsInBusiness', 'cinNumber', 'pan', 'aadhar',
             'state', 'district', 'subDistrict', 'pinCode', 'businessAddress',
             'industry', 'companyEmail', 'alternateContactPerson',
             'companyPhoneNumber', 'alternateContactNumber', 'websiteUrl'
