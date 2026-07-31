@@ -427,3 +427,41 @@ exports.acceptTerms = async (req, res) => {
         return res.status(500).json({ msg: "Internal server error" });
     }
 };
+
+exports.logout = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ msg: "Unauthorized" });
+        }
+
+        let user = await User.findById(userId);
+        let isSubMember = false;
+        if (!user) {
+            user = await SubMember.findById(userId);
+            if (!user) {
+                return res.status(404).json({ msg: "User not found" });
+            }
+            isSubMember = true;
+        }
+
+        user.deviceToken = null;
+        user.token = null;
+        user.refreshToken = null;
+        await user.save();
+
+        await logActivity(req, {
+            userId: user._id,
+            userRole: isSubMember ? 'sub-member' : 'member',
+            userName: isSubMember ? user.firstName : user.name,
+            activityType: 'System Logout',
+            details: 'User logged out and device token cleared',
+            parentId: isSubMember ? user.parentId : user._id
+        });
+
+        return res.status(200).json({ msg: "Logged out successfully" });
+    } catch (err) {
+        console.error("Logout error:", err);
+        return res.status(500).json({ msg: "Logout failed" });
+    }
+};

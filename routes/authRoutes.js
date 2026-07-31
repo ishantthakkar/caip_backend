@@ -11,5 +11,6 @@ router.post("/refresh-token", authController.refreshToken);
 router.post("/admin-login", authController.adminLogin);
 router.get("/verify-gst/:gst", authController.verifyGst);
 router.post("/accept-terms", authController.acceptTerms);
+router.post("/logout", require("../middleware/auth").verifyToken, authController.logout);
 
 module.exports = router;
