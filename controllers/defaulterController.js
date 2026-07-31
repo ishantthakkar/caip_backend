@@ -122,7 +122,8 @@ exports.reportDefaulter = async (req, res) => {
             member_id: req.user.id,
             message_title: "New Defaulter Reported",
             message_content: `A new defaulter ${req.body.defaulter_name || 'record'} has been reported.`,
-            sending_time: new Date().toISOString()
+            sending_time: new Date().toISOString(),
+            defaulter_id: report._id.toString()
         });
 
         // Notify Parent if sub-member
@@ -131,7 +132,8 @@ exports.reportDefaulter = async (req, res) => {
                 member_id: organizationId,
                 message_title: "New Sub-member Activity",
                 message_content: `Your sub-member ${req.user.name} has added a new defaulter: ${req.body.defaulter_name}.`,
-                sending_time: new Date().toISOString()
+                sending_time: new Date().toISOString(),
+                defaulter_id: report._id.toString()
             });
         }
 
@@ -140,7 +142,8 @@ exports.reportDefaulter = async (req, res) => {
             member_id: 'Admin',
             message_title: "New Defaulter Reported",
             message_content: `A new defaulter ${req.body.defaulter_name} (${req.body.gst_number || 'N/A'}) has been added to the database by ${user.companyName || user.name}.`,
-            sending_time: new Date().toISOString()
+            sending_time: new Date().toISOString(),
+            defaulter_id: report._id.toString()
         });
 
         // Log the activity

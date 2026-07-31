@@ -17,6 +17,10 @@ const notificationSchema = new mongoose.Schema({
         type: String,
         required: false,
     },
+    defaulter_id: {
+        type: String,
+        required: false,
+    },
     read_by: {
         type: [String],
         default: []
