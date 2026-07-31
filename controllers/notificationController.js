@@ -81,6 +81,91 @@ exports.getMemberNotifications = async (req, res) => {
     }
 };
 
+exports.getMobileNotifications = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const list = await Notification.find({
+            $and: [
+                {
+                    $or: [
+                        { member_id: 'All' },
+                        { member_id: userId }
+                    ]
+                },
+                {
+                    message_title: { $regex: '^New Defaulter Reported$', $options: 'i' }
+                }
+            ]
+        }).sort({ createdAt: -1 }).limit(50);
+
+        const formatted = list.map((item) => ({
+            ...item.toObject(),
+            is_read: item.read_by.includes(userId)
+        }));
+
+        const readNotifications = formatted.filter((item) => item.is_read);
+        const unreadNotifications = formatted.filter((item) => !item.is_read);
+
+        return res.status(200).json({
+            msg: "Mobile notifications fetched successfully",
+            notifications: formatted,
+        });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "DB Error" });
+    }
+};
+
+exports.markNotificationReadStatus = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { notification_id, is_read } = req.body;
+
+        if (!notification_id) {
+            return res.status(400).json({ msg: "Notification ID is required" });
+        }
+
+        const shouldMarkRead = typeof is_read === 'boolean' ? is_read : true;
+
+        const notification = await Notification.findOne({
+            _id: notification_id,
+            $or: [
+                { member_id: 'All' },
+                { member_id: userId }
+            ]
+        });
+
+        if (!notification) {
+            return res.status(404).json({ msg: "Notification not found" });
+        }
+
+        if (shouldMarkRead) {
+            await Notification.updateOne(
+                { _id: notification_id },
+                { $addToSet: { read_by: userId } }
+            );
+        } else {
+            await Notification.updateOne(
+                { _id: notification_id },
+                { $pull: { read_by: userId } }
+            );
+        }
+
+        const updatedNotification = await Notification.findById(notification_id);
+
+        return res.status(200).json({
+            msg: shouldMarkRead ? "Notification marked as read" : "Notification marked as unread",
+            data: {
+                _id: updatedNotification._id,
+                is_read: updatedNotification.read_by.includes(userId)
+            }
+        });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ msg: "Mark notification status error" });
+    }
+};
+
 exports.getAdminAlerts = async (req, res) => {
     try {
         // Fetch notifications specifically for 'Admin'

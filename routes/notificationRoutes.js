@@ -25,6 +25,8 @@ router.post("/admin/alerts-readall", verifyToken, verifyAdmin, notificationContr
 
 // Member Routes
 router.get("/member/notifications", verifyToken, notificationController.getMemberNotifications);
+router.get("/member/mobile/notifications", verifyToken, notificationController.getMobileNotifications);
 router.post("/member/notifications-readall", verifyToken, notificationController.markAllRead);
+router.post("/member/notifications/read-unread", verifyToken, notificationController.markNotificationReadStatus);
 
 module.exports = router;
