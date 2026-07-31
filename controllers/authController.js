@@ -8,8 +8,8 @@ const TermsCondition = require("../models/TermsCondition");
 const logActivity = require("../middleware/activityLogger");
 const emailService = require("../utils/emailService");
 
-const createAccessToken = (payload) => jwt.sign(payload, JWT_SECRET, { expiresIn: "8h" });
-const createRefreshToken = (payload) => jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "30d" });
+const createAccessToken = (payload) => jwt.sign(payload, JWT_SECRET, { expiresIn: "5m" });
+const createRefreshToken = (payload) => jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "10m" });
 
 exports.register = async (req, res) => {
     try {
