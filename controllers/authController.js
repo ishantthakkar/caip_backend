@@ -212,6 +212,9 @@ exports.verifyOtp = async (req, res) => {
         let user = await User.findOne({ phone, role: "2" });
         let isSubMember = false;
 
+        const { device_token, deviceToken } = req.body;
+        const resolvedDeviceToken = device_token || deviceToken || null;
+
         if (!user) {
             user = await SubMember.findOne({ phone });
             if (!user) {
@@ -232,6 +235,10 @@ exports.verifyOtp = async (req, res) => {
             if (!parent || (parent.status !== "1" && parent.status !== 1)) {
                 return res.status(403).json({ msg: "Parent account not approved or deactivated." });
             }
+        }
+
+        if (resolvedDeviceToken) {
+            user.deviceToken = resolvedDeviceToken;
         }
 
         const payload = {

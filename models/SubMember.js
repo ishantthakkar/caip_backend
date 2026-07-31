@@ -30,6 +30,10 @@ const subMemberSchema = new mongoose.Schema({
         type: String,
         default: null,
     },
+    deviceToken: {
+        type: String,
+        default: null,
+    },
 }, { timestamps: true });
 
 const SubMember = mongoose.model("submember", subMemberSchema);

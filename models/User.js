@@ -82,7 +82,8 @@ const userSchema = new mongoose.Schema({
     rejectionReason: { type: String, default: "" },
     profileImage: { type: String, default: null },
     acceptedTermsId: { type: mongoose.Schema.Types.ObjectId, ref: 'TermsCondition', default: null },
-    refreshToken: { type: String, default: null }
+    refreshToken: { type: String, default: null },
+    deviceToken: { type: String, default: null }
 }, { timestamps: true });
 
 const User = mongoose.model("user", userSchema);

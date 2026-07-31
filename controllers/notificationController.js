@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
+const { sendToDevice } = require("../services/firebaseService");
 
 exports.createNotification = async (req, res) => {
     try {
@@ -24,6 +25,13 @@ exports.createNotification = async (req, res) => {
                 sending_time: time,
                 read_by: []
             });
+            // Optionally send push to token list if provided
+            if (req.body.device_tokens && Array.isArray(req.body.device_tokens)) {
+                const payload = { title: message_title, body: message_content };
+                for (const token of req.body.device_tokens) {
+                    try { await sendToDevice(token, payload); } catch (e) { console.error('Push error', e.message); }
+                }
+            }
         } else {
             // Priority: Send to Specific Tagged Members
             const targetIds = Array.isArray(member_ids) ? member_ids : [member_ids];

@@ -6,11 +6,35 @@ const ActivityLog = require("../models/ActivityLog");
 const DownloadedReport = require("../models/DownloadedReport");
 const logActivity = require("../middleware/activityLogger");
 const Notification = require("../models/Notification");
+const SubMember = require("../models/SubMember");
 const emailService = require("../utils/emailService");
+const { sendToDevice } = require("../services/firebaseService");
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
 const PDFTable = require("pdfkit-table");
+
+const sendPushToRegisteredDevices = async (title, body, data = {}) => {
+    try {
+        const [users, subMembers] = await Promise.all([
+            User.find({ deviceToken: { $exists: true, $ne: null, $ne: "" } }).select("deviceToken"),
+            SubMember.find({ deviceToken: { $exists: true, $ne: null, $ne: "" } }).select("deviceToken")
+        ]);
+
+        const deviceTokens = [...new Set([
+            ...users.map(user => user.deviceToken).filter(Boolean),
+            ...subMembers.map(member => member.deviceToken).filter(Boolean)
+        ])];
+
+        if (deviceTokens.length === 0) return;
+
+        await Promise.allSettled(deviceTokens.map(token =>
+            sendToDevice(token, { title, body, data })
+        ));
+    } catch (err) {
+        console.error("Push notification dispatch failed:", err.message);
+    }
+};
 
 exports.checkDuplicates = async (req, res) => {
     try {
@@ -77,6 +101,16 @@ exports.reportDefaulter = async (req, res) => {
 
         await report.save();
 
+        await sendPushToRegisteredDevices(
+            "New Defaulter Reported",
+            `A new defaulter ${req.body.defaulter_name || 'record'} has been reported.`,
+            {
+                type: "defaulter_reported",
+                defaulterId: report._id.toString(),
+                reportId: report._id.toString()
+            }
+        );
+
         // Send Email Notification
         emailService.sendDefaulterAdditionEmail(
             { name: user.name, email: user.email, companyName: user.companyName },
@@ -86,8 +120,8 @@ exports.reportDefaulter = async (req, res) => {
         // System Notification for the reporter
         await Notification.create({
             member_id: req.user.id,
-            message_title: "Defaulter Added",
-            message_content: `Your report for ${req.body.defaulter_name} has been successfully submitted and stored.`,
+            message_title: "New Defaulter Reported",
+            message_content: `A new defaulter ${req.body.defaulter_name || 'record'} has been reported.`,
             sending_time: new Date().toISOString()
         });
 
