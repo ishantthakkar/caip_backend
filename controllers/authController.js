@@ -428,6 +428,42 @@ exports.acceptTerms = async (req, res) => {
     }
 };
 
+exports.updateDeviceToken = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const deviceToken = req.body.device_token || req.body.deviceToken;
+
+        if (!userId) {
+            return res.status(401).json({ msg: "Unauthorized" });
+        }
+        if (!deviceToken) {
+            return res.status(400).json({ msg: "device_token is required" });
+        }
+
+        // Remove this token from any other user/sub-member so it stays unique.
+        await User.updateMany({ deviceToken: deviceToken, _id: { $ne: userId } }, { deviceToken: null });
+        await SubMember.updateMany({ deviceToken: deviceToken, _id: { $ne: userId } }, { deviceToken: null });
+
+        let user = await User.findById(userId);
+        let isSubMember = false;
+        if (!user) {
+            user = await SubMember.findById(userId);
+            if (!user) {
+                return res.status(404).json({ msg: "User not found" });
+            }
+            isSubMember = true;
+        }
+
+        user.deviceToken = deviceToken;
+        await user.save();
+
+        return res.status(200).json({ msg: "Device token updated successfully", device_token: deviceToken });
+    } catch (err) {
+        console.error("Update device token error:", err);
+        return res.status(500).json({ msg: "Unable to update device token" });
+    }
+};
+
 exports.logout = async (req, res) => {
     try {
         const userId = req.user?.id;
