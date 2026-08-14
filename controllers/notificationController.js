@@ -121,7 +121,8 @@ exports.markNotificationReadStatus = async (req, res) => {
             _id: notification_id,
             $or: [
                 { member_id: 'All' },
-                { member_id: userId }
+                { member_id: userId },
+                { message_title: { $regex: '^New Defaulter Reported$', $options: 'i' } }
             ]
         });
 
@@ -171,7 +172,13 @@ exports.markAllRead = async (req, res) => {
     try {
         const userId = req.user.id;
         await Notification.updateMany(
-            { $or: [{ member_id: 'All' }, { member_id: userId }] },
+            {
+                $or: [
+                    { member_id: 'All' },
+                    { member_id: userId },
+                    { message_title: { $regex: '^New Defaulter Reported$', $options: 'i' } }
+                ]
+            },
             { $addToSet: { read_by: userId } }
         );
         return res.status(200).json({ msg: "Marked as read" });
