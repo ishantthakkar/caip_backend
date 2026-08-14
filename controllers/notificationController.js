@@ -89,7 +89,6 @@ exports.getMobileNotifications = async (req, res) => {
                 {
                     $or: [
                         { member_id: 'All' },
-                        { member_id: userId }
                     ]
                 },
                 {
