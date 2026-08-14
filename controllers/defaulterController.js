@@ -9,6 +9,7 @@ const Notification = require("../models/Notification");
 const SubMember = require("../models/SubMember");
 const emailService = require("../utils/emailService");
 const { sendToDevice } = require("../services/firebaseService");
+const { GST_API_KEY } = require("../config/config");
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
@@ -280,14 +281,16 @@ const performDefaulterSearch = async (filters, user) => {
     // 🌐 EXTERNAL GST FALLBACK
     if (reports.length === 0 && gst && defaultLoad !== 'true') {
         try {
-            const gstApiUrl = `https://sheet.gstincheck.co.in/check/3294107c41d9191fd2857916d99d23c2/${gst}`;
-            const gstResponse = await fetch(gstApiUrl);
-            const gstData = await gstResponse.json();
+            const gstApiUrl = `https://www.gstinapi.in/v1/gstin/${gst}`;
+            const gstResponse = await fetch(gstApiUrl, {
+                headers: { "x-api-key": GST_API_KEY }
+            });
+            const gstResult = await gstResponse.json();
 
-            if (gstData && gstData.flag && gstData.data) {
-                const ext = gstData.data;
-                const extName = ext.tradeNam;
-                const extAddress = ext.pradr?.adr;
+            if (gstResult && gstResult.success && gstResult.data) {
+                const ext = gstResult.data;
+                const extName = ext.legal_name || ext.trade_name;
+                const extAddress = ext.address;
 
                 let orConditions = [];
 

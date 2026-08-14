@@ -3,13 +3,13 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const SubMember = require("../models/SubMember");
 const Notification = require("../models/Notification");
-const { JWT_SECRET, JWT_REFRESH_SECRET } = require("../config/config");
+const { JWT_SECRET, JWT_REFRESH_SECRET, GST_API_KEY } = require("../config/config");
 const TermsCondition = require("../models/TermsCondition");
 const logActivity = require("../middleware/activityLogger");
 const emailService = require("../utils/emailService");
 
-const createAccessToken = (payload) => jwt.sign(payload, JWT_SECRET, { expiresIn: "5m" });
-const createRefreshToken = (payload) => jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "10m" });
+const createAccessToken = (payload) => jwt.sign(payload, JWT_SECRET, { expiresIn: "15d" });
+const createRefreshToken = (payload) => jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "30d" });
 
 exports.register = async (req, res) => {
     try {
@@ -400,14 +400,16 @@ exports.verifyGst = async (req, res) => {
             return res.status(400).json({ msg: "GST number is required" });
         }
 
-        const apiUrl = `https://sheet.gstincheck.co.in/check/ecf57ae07da1c5e3ecbbae1048670ec5/${gst}`;
-        const response = await fetch(apiUrl);
-        const data = await response.json();
+        const apiUrl = `https://www.gstinapi.in/v1/gstin/${gst}`;
+        const response = await fetch(apiUrl, {
+            headers: { "x-api-key": GST_API_KEY }
+        });
+        const result = await response.json();
 
-        if (data.flag) {
-            return res.status(200).json({ msg: "GST found", data: data.data });
+        if (result.success) {
+            return res.status(200).json({ msg: "GST found", data: result.data });
         } else {
-            return res.status(400).json({ msg: data.message || "Invalid GST number" });
+            return res.status(400).json({ msg: result.message || "Invalid GST number" });
         }
     } catch (err) {
         console.error("GST verification error:", err);
