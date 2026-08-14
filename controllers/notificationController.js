@@ -85,17 +85,8 @@ exports.getMobileNotifications = async (req, res) => {
     try {
         const userId = req.user.id;
         const list = await Notification.find({
-            $and: [
-                {
-                    $or: [
-                        { member_id: 'All' },
-                    ]
-                },
-                {
-                    message_title: { $regex: '^New Defaulter Reported$', $options: 'i' }
-                }
-            ]
-        }).sort({ createdAt: -1 }).limit(50);
+            message_title: { $regex: '^New Defaulter Reported$', $options: 'i' }
+        }).sort({ createdAt: -1 });
 
         const formatted = list.map((item) => ({
             ...item.toObject(),
