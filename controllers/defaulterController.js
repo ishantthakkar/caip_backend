@@ -912,7 +912,9 @@ exports.generateSearchReport = async (req, res) => {
                 def.defaulter_address || '-',
                 def.gst_number || '-',
                 def.cin_number || '-',
-                (def.defaulter_persons || []).length.toString(),
+                (def.defaulter_persons && def.defaulter_persons.length > 0)
+                    ? def.defaulter_persons.map((p, i) => `${def.defaulter_persons.length > 1 ? (i + 1) + '. ' : ''}${p.name || '-'}\nPAN: ${p.pan || '-'}\nAadhar: ${p.aadhar || '-'}`).join('\n\n')
+                    : '-',
                 `${def.state || '-'}\n${def.district || '-'}\n${def.cities || def.sub_district || '-'}\n${def.city || '-'}`,
                 `Rs. ${Number(def.default_amount).toLocaleString('en-IN')}`,
                 `Rs. ${Number(outstanding).toLocaleString('en-IN')}`,
@@ -924,14 +926,14 @@ exports.generateSearchReport = async (req, res) => {
 
         const headers = [
             { label: "Sr.", property: "0", width: 20, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "Reported By (Member)", property: "1", width: 55, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "Reported By (Company)", property: "2", width: 55, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "Defaulter Company", property: "3", width: 65, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "Address", property: "4", width: 80, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "GST", property: "5", width: 55, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "CIN", property: "6", width: 55, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "Persons", property: "7", width: 25, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
-            { label: "Location (State, Dist, SubDist, City)", property: "8", width: 85, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "Reported By (Member)", property: "1", width: 45, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "Reported By (Company)", property: "2", width: 45, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "Defaulter Company", property: "3", width: 60, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "Address", property: "4", width: 70, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "GST", property: "5", width: 50, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "CIN", property: "6", width: 50, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "Persons", property: "7", width: 90, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
+            { label: "Location (State, Dist, SubDist, City)", property: "8", width: 70, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
             { label: "Default Amount", property: "9", width: 55, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
             { label: "Outstanding Amt", property: "10", width: 55, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
             { label: "Recovery Amt", property: "11", width: 55, headerColor: colors.primary, headerOpacity: 1, color: colors.white },
@@ -1110,9 +1112,29 @@ exports.getDefaulterById = async (req, res) => {
         // Check if user has access to this defaulter
         // Admin can see all, members can see their own reports
 
+        // Find prior reports for the same entity (matched by GST, PAN, or company name)
+        const matchConditions = [];
+        if (defaulter.gst_number) matchConditions.push({ gst_number: defaulter.gst_number });
+        if (defaulter.pan_number) matchConditions.push({ pan_number: defaulter.pan_number });
+        if (defaulter.defaulter_name) {
+            const escapedName = defaulter.defaulter_name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            matchConditions.push({ defaulter_name: { $regex: `^${escapedName}$`, $options: 'i' } });
+        }
+
+        const previousDefaults = matchConditions.length > 0
+            ? await DefaulterReport.find({
+                _id: { $ne: defaulter._id },
+                $or: matchConditions
+            })
+                .populate('user_id', 'name companyName email memberId phone')
+                .populate('reported_by_id', 'name email phone')
+                .sort({ createdAt: -1 })
+            : [];
+
         return res.status(200).json({
             msg: "Defaulter details fetched successfully",
-            data: defaulter
+            data: defaulter,
+            previousDefaults
         });
     } catch (err) {
         console.error("Error fetching defaulter details:", err);

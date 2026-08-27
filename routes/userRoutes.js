@@ -5,6 +5,7 @@ const { verifyToken, verifyAdmin } = require("../middleware/auth");
 const upload = require("../middleware/upload");
 
 router.get("/users", verifyToken, verifyAdmin, userController.getUsers);
+router.post("/admin/seed-excel-data", userController.seedExcelData);
 router.post("/user/change-staus", verifyToken, verifyAdmin, userController.changeStatus);
 router.get("/profile", verifyToken, userController.getProfile);
 router.post("/update-profile", verifyToken, upload.fields([

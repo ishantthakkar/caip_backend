@@ -3,6 +3,17 @@ const DefaulterReport = require("../models/DefaulterReport");
 const SearchHistory = require("../models/SearchHistory");
 const emailService = require("../utils/emailService");
 const logActivity = require("../middleware/activityLogger");
+const { runImport } = require("../services/excelImportService");
+
+exports.seedExcelData = async (req, res) => {
+    try {
+        const result = await runImport();
+        return res.status(200).json({ msg: "Excel data import completed", data: result });
+    } catch (err) {
+        console.error("Excel seeder error:", err);
+        return res.status(500).json({ msg: "Excel data import failed", error: err.message });
+    }
+};
 
 exports.getUsers = async (req, res) => {
     try {
