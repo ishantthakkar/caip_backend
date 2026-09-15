@@ -2,7 +2,7 @@ node_modules/
 .env
 uploads/
 *.log
+*.xlsx
 branch_structure.json
 temp_auto_push.bat
 temp_interactive_push.bat
-*.xlsx
